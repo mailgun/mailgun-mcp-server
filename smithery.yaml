@@ -1,0 +1,19 @@
+# Smithery configuration file: https://smithery.ai/docs/build/project-config
+
+startCommand:
+  type: stdio
+  commandFunction:
+    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
+    |-
+    (config) => ({ command: 'node', args: ['src/mailgun-mcp.js'], env: { MAILGUN_API_KEY: config.mailgunApiKey } })
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required:
+      - mailgunApiKey
+    properties:
+      mailgunApiKey:
+        type: string
+        description: Mailgun API Key
+  exampleConfig:
+    mailgunApiKey: key-1234567890abcdef
