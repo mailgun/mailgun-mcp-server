@@ -1,5 +1,6 @@
 # Mailgun MCP Server
 [![MCP](https://img.shields.io/badge/MCP-Server-blue.svg)](https://github.com/modelcontextprotocol)
+[![smithery badge](https://smithery.ai/badge/@mailgun/mailgun-mcp-server)](https://smithery.ai/server/@mailgun/mailgun-mcp-server)
 
 ## Overview
 A Model Context Protocol (MCP) server implementation for [Mailgun](https://mailgun.com), enabling MCP-compatible AI clients like Claude Desktop to interract with the service.
@@ -12,6 +13,14 @@ A Model Context Protocol (MCP) server implementation for [Mailgun](https://mailg
 - Mailgun account and an API key
 
 ## Quick Start
+
+### Installing via Smithery
+
+To install Mailgun MCP Server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@mailgun/mailgun-mcp-server):
+
+```bash
+npx -y @smithery/cli install @mailgun/mailgun-mcp-server --client claude
+```
 
 ### Manual Installation
 1. Clone the repository:
