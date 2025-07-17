@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/mailgun-mailgun-mcp-server-badge.png)](https://mseep.ai/app/mailgun-mailgun-mcp-server)
+
 # Mailgun MCP Server
 [![MCP](https://img.shields.io/badge/MCP-Server-blue.svg)](https://github.com/modelcontextprotocol)
 
