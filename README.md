@@ -25,70 +25,22 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Ma
 
 ## Quick Start
 
-### Installation
-
-Via npm:
-```bash
-npm install -g @mailgun/mcp-server
-```
-
-Or clone the repository:
-```bash
-git clone https://github.com/mailgun/mailgun-mcp-server.git
-cd mailgun-mcp-server
-npm install
-```
-
-Then configure your MCP client (see below).
-
 ### Configuration
 
 Add the following to your MCP client configuration:
 
-If installed globally via npm:
 ```json
 {
-    "mcpServers": {
-        "mailgun": {
-            "command": "mailgun-mcp-server",
-            "env": {
-                "MAILGUN_API_KEY": "YOUR-mailgun-api-key",
-                "MAILGUN_API_REGION": "us"
-            }
-        }
+  "mcpServers": {
+    "mailgun": {
+      "command": "npx",
+      "args": ["-y", "@mailgun/mcp-server"],
+      "env": {
+        "MAILGUN_API_KEY": "YOUR-mailgun-api-key",
+        "MAILGUN_API_REGION": "us"
+      }
     }
-}
-```
-
-Or using npx (no install required):
-```json
-{
-    "mcpServers": {
-        "mailgun": {
-            "command": "npx",
-            "args": ["-y", "@mailgun/mcp-server"],
-            "env": {
-                "MAILGUN_API_KEY": "YOUR-mailgun-api-key",
-                "MAILGUN_API_REGION": "us"
-            }
-        }
-    }
-}
-```
-
-If cloned from source:
-```json
-{
-    "mcpServers": {
-        "mailgun": {
-            "command": "node",
-            "args": ["/path/to/mailgun-mcp-server/src/mailgun-mcp.js"],
-            "env": {
-                "MAILGUN_API_KEY": "YOUR-mailgun-api-key",
-                "MAILGUN_API_REGION": "us"
-            }
-        }
-    }
+  }
 }
 ```
 
@@ -133,12 +85,22 @@ Can you check the bounce classification stats for my account and tell me
 what the most common bounce reasons are?
 ```
 
-## Testing
+## Development
 
-Run the test suite:
+To run from source, clone the repository and use `node` directly:
 
 ```bash
+git clone https://github.com/mailgun/mailgun-mcp-server.git
+cd mailgun-mcp-server
+npm install
 npm test
+```
+
+In your MCP client config, replace the `npx` command with:
+
+```json
+"command": "node",
+"args": ["/path/to/mailgun-mcp-server/src/mailgun-mcp.js"]
 ```
 
 ## Debugging

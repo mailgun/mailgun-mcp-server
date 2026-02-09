@@ -174,6 +174,10 @@ describe('Mailgun MCP Server', () => {
     test('preserves hyphens and underscores', () => {
       expect(serverModule.sanitizeToolId('get-v3-domain_name')).toBe('get-v3-domain_name');
     });
+
+    test('strips leading and trailing dashes', () => {
+      expect(serverModule.sanitizeToolId('/v3/domains/{name}/')).toBe('v3-domains--name');
+    });
   });
 
   describe('getRequestContentType()', () => {

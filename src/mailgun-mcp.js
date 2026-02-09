@@ -414,7 +414,8 @@ export function getOperationDetails(openApiSpec, method, path) {
  */
 export function sanitizeToolId(operationId) {
   // MCP protocol limits tool names to 64 characters
-  return operationId.replace(/[^\w-]/g, '-').toLowerCase().slice(0, 64);
+  // Strip leading/trailing dashes to conform to MCP tool naming standard
+  return operationId.replace(/[^\w-]/g, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 64);
 }
 
 /**
