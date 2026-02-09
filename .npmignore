@@ -1,7 +1,9 @@
-# Tests
+# Tests and config
 test/
 coverage/
 jest.config.mjs
+eslint.config.js
+.github/
 
 # IDE
 .idea/

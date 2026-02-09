@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -267,7 +269,7 @@ export function openapiToZod(schema, fullSpec) {
 
   // Convert different schema types to Zod equivalents
   switch (schema.type) {
-    case 'string':
+    case 'string': {
       let zodString = z.string();
       if (schema.enum) {
         return z.enum(schema.enum);
@@ -279,9 +281,10 @@ export function openapiToZod(schema, fullSpec) {
         zodString = zodString.describe(`URI: ${schema.description || ''}`);
       }
       return zodString.describe(schema.description || '');
+    }
 
     case 'number':
-    case 'integer':
+    case 'integer': {
       let zodNumber = z.number();
       if (schema.minimum !== undefined) {
         zodNumber = zodNumber.min(schema.minimum);
@@ -290,6 +293,7 @@ export function openapiToZod(schema, fullSpec) {
         zodNumber = zodNumber.max(schema.maximum);
       }
       return zodNumber.describe(schema.description || '');
+    }
 
     case 'boolean':
       return z.boolean().describe(schema.description || '');
@@ -297,7 +301,7 @@ export function openapiToZod(schema, fullSpec) {
     case 'array':
       return z.array(openapiToZod(schema.items, fullSpec)).describe(schema.description || '');
 
-    case 'object':
+    case 'object': {
       if (!schema.properties) return z.record(z.any());
 
       const shape = {};
@@ -307,6 +311,7 @@ export function openapiToZod(schema, fullSpec) {
           : openapiToZod(prop, fullSpec).optional();
       }
       return z.object(shape).describe(schema.description || '');
+    }
 
     default:
       // For schemas without a type but with properties
@@ -541,7 +546,7 @@ export function registerTool(toolId, toolDescription, paramsSchema, method, path
           content: [
             {
               type: "text",
-              text: `✅ ${method.toUpperCase()} ${finalPath} completed successfully:\n${JSON.stringify(result, null, 2)}`,
+              text: `${method.toUpperCase()} ${finalPath} completed successfully:\n${JSON.stringify(result, null, 2)}`,
             },
           ],
         };

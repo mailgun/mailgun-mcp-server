@@ -12,7 +12,6 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Ma
 - **Routes** — View and update inbound email routing rules
 - **Mailing Lists** — Create and manage mailing lists and their members
 - **Templates** — Create and manage email templates with versioning
-- **Events** — Query email event logs (delivered, bounced, opened, clicked, etc.)
 - **Analytics** — Query sending metrics, usage metrics, and logs
 - **Stats** — View aggregate statistics by domain, tag, provider, device, and country
 - **Suppressions** — View bounces, unsubscribes, complaints, and allowlist entries
@@ -28,23 +27,56 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Ma
 
 ### Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/mailgun/mailgun-mcp-server.git
-   cd mailgun-mcp-server
-   ```
+Via npm:
+```bash
+npm install -g @mailgun/mcp-server
+```
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+Or clone the repository:
+```bash
+git clone https://github.com/mailgun/mailgun-mcp-server.git
+cd mailgun-mcp-server
+npm install
+```
 
-3. Configure your MCP client (see below).
+Then configure your MCP client (see below).
 
 ### Configuration
 
 Add the following to your MCP client configuration:
 
+If installed globally via npm:
+```json
+{
+    "mcpServers": {
+        "mailgun": {
+            "command": "mailgun-mcp-server",
+            "env": {
+                "MAILGUN_API_KEY": "YOUR-mailgun-api-key",
+                "MAILGUN_API_REGION": "us"
+            }
+        }
+    }
+}
+```
+
+Or using npx (no install required):
+```json
+{
+    "mcpServers": {
+        "mailgun": {
+            "command": "npx",
+            "args": ["-y", "@mailgun/mcp-server"],
+            "env": {
+                "MAILGUN_API_KEY": "YOUR-mailgun-api-key",
+                "MAILGUN_API_REGION": "us"
+            }
+        }
+    }
+}
+```
+
+If cloned from source:
 ```json
 {
     "mcpServers": {
