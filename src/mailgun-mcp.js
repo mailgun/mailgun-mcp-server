@@ -49,7 +49,6 @@ export const endpoints = [
     "POST /v3/domains/{domain}/webhooks",
     "GET /v3/domains/{domain_name}/webhooks/{webhook_name}",
     "PUT /v3/domains/{domain_name}/webhooks/{webhook_name}",
-    "DELETE /v3/domains/{domain_name}/webhooks/{webhook_name}",
 
     // IPs & IP Pools
     "GET /v5/accounts/subaccounts/ip_pools/all",
