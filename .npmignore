@@ -1,0 +1,16 @@
+# Tests
+test/
+coverage/
+jest.config.mjs
+
+# IDE
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# Misc
+.DS_Store
+.env

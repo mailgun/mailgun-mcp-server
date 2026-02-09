@@ -1,17 +1,42 @@
 {
+    "name": "@mailgun/mcp-server",
+    "version": "1.0.0",
+    "description": "A Model Context Protocol (MCP) server for Mailgun, enabling MCP-compatible AI clients to interact with the Mailgun email service.",
     "type": "module",
+    "main": "src/mailgun-mcp.js",
+    "license": "Apache-2.0",
+    "author": "Mailgun Technologies, Inc",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/mailgun/mailgun-mcp-server.git"
+    },
+    "bugs": {
+        "url": "https://github.com/mailgun/mailgun-mcp-server/issues"
+    },
+    "homepage": "https://github.com/mailgun/mailgun-mcp-server#readme",
+    "keywords": [
+        "mailgun",
+        "mcp",
+        "model-context-protocol",
+        "email",
+        "ai"
+    ],
+    "engines": {
+        "node": ">=18.0.0"
+    },
     "scripts": {
+        "start": "node src/mailgun-mcp.js",
         "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
         "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
         "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
-    },
-    "devDependencies": {
-        "@jest/globals": "^29.0.0",
-        "jest": "^29.0.0"
     },
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.7.0",
         "js-yaml": "^4.1.0",
         "zod": "^3.24.2"
+    },
+    "devDependencies": {
+        "@jest/globals": "^29.0.0",
+        "jest": "^29.0.0"
     }
 }
