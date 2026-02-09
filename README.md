@@ -85,6 +85,46 @@ Can you check the bounce classification stats for my account and tell me
 what the most common bounce reasons are?
 ```
 
+#### Troubleshoot DNS
+```
+Check the DNS verification status for my domain DOMAIN_HERE and tell me
+if anything needs fixing.
+```
+
+#### Review Suppressions
+```
+Are there any unsubscribes or complaints for DOMAIN_HERE? Summarize the
+top offenders.
+```
+
+#### Manage Routing Rules
+```
+List all my inbound routes and explain what each one does.
+```
+
+#### Create a Mailing List
+```
+Create a mailing list called announcements@DOMAIN_HERE and add these
+members: alice@example.com, bob@example.com.
+```
+
+#### Compare Domains
+```
+Compare my sending volume and delivery rates across all my domains for
+the past month.
+```
+
+#### Engagement by Region
+```
+Break down my email engagement by country and device for DOMAIN_HERE.
+```
+
+#### Review Tracking Settings
+```
+List all my domains and show which ones have tracking enabled for clicks
+and opens.
+```
+
 ## Development
 
 To run from source, clone the repository and use `node` directly:
