@@ -52,7 +52,7 @@ const endpoints = [
     "DELETE /v3/domains/{domain_name}/webhooks/{webhook_name}",
 
     // IPs & IP Pools
-    "GET /v5/accounts/subaccounts/ip_pools",
+    "GET /v5/accounts/subaccounts/ip_pools/all",
     "GET /v3/ips",
     "GET /v3/ips/{ip}",
     "GET /v3/ips/{ip}/domains",
@@ -85,20 +85,20 @@ const endpoints = [
     "POST /v1/analytics/logs",
 
     // Suppressions - Bounces
-    "GET /v3/{domainID}/bounces/{address}",
-    "GET /v3/{domainID}/bounces",
+    "GET /v3/{domain_name}/bounces/{address}",
+    "GET /v3/{domain_name}/bounces",
 
     // Suppressions - Unsubscribes
-    "GET /v3/{domainID}/unsubscribes/{address}",
-    "GET /v3/{domainID}/unsubscribes",
+    "GET /v3/{domain_name}/unsubscribes/{address}",
+    "GET /v3/{domain_name}/unsubscribes",
 
     // Suppressions - Complaints
-    "GET /v3/{domainID}/complaints/{address}",
-    "GET /v3/{domainID}/complaints",
+    "GET /v3/{domain_name}/complaints/{address}",
+    "GET /v3/{domain_name}/complaints",
 
     // Suppressions - Allowlist
-    "GET /v3/{domainID}/whitelists/{value}",
-    "GET /v3/{domainID}/whitelists",
+    "GET /v3/{domain_name}/whitelists/{value}",
+    "GET /v3/{domain_name}/whitelists",
 
     // Routes
     "GET /v3/routes",
