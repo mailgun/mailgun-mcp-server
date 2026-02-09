@@ -26,7 +26,7 @@ const OPENAPI_YAML = path.resolve(__dirname, 'openapi.yaml');
 
 
 // Define Mailgun API endpoints supported by this integration
-const endpoints = [
+export const endpoints = [
     // Messages
     "POST /v3/{domain_name}/messages",
     "GET /v3/domains/{domain_name}/messages/{storage_key}",
@@ -344,16 +344,11 @@ export function openapiToZod(schema, fullSpec) {
 export function getRequestContentType(operation) {
   if (!operation.requestBody?.content) return "application/x-www-form-urlencoded";
 
-  const contentTypes = [
-    'application/json',
-    'multipart/form-data',
-    'application/x-www-form-urlencoded'
-  ];
+  if (operation.requestBody.content['application/json']) return 'application/json';
 
-  for (const contentType of contentTypes) {
-    if (operation.requestBody.content[contentType]) return contentType;
-  }
-
+  // Use form-urlencoded even when the spec declares multipart/form-data,
+  // since we don't support file uploads and sending a multipart Content-Type
+  // without proper boundary encoding causes API errors.
   return "application/x-www-form-urlencoded";
 }
 

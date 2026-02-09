@@ -216,7 +216,7 @@ describe('Mailgun MCP Server', () => {
       expect(serverModule.getRequestContentType(operation)).toBe('application/x-www-form-urlencoded');
     });
 
-    test('returns multipart/form-data when only that is available', () => {
+    test('returns form-urlencoded when only multipart/form-data is available', () => {
       const operation = {
         requestBody: {
           content: {
@@ -224,7 +224,7 @@ describe('Mailgun MCP Server', () => {
           }
         }
       };
-      expect(serverModule.getRequestContentType(operation)).toBe('multipart/form-data');
+      expect(serverModule.getRequestContentType(operation)).toBe('application/x-www-form-urlencoded');
     });
 
     test('falls back to form-urlencoded for unknown content types', () => {
@@ -663,6 +663,63 @@ describe('getOperationDetails()', () => {
     };
     const result = serverModule.getOperationDetails(openApiSpec, 'POST', '/test');
     expect(result.operation.summary).toBe('Post test');
+  });
+});
+
+describe('endpoint validation against OpenAPI spec', () => {
+  const openApiSpec = serverModule.loadOpenApiSpec(
+    new URL('../src/openapi.yaml', import.meta.url).pathname
+  );
+
+  test('every endpoint matches a path and method in the OpenAPI spec', () => {
+    const missing = [];
+    for (const endpoint of serverModule.endpoints) {
+      const [method, path] = endpoint.split(' ');
+      const result = serverModule.getOperationDetails(openApiSpec, method, path);
+      if (!result) missing.push(endpoint);
+    }
+    expect(missing).toEqual([]);
+  });
+
+  test('every endpoint produces a tool ID within the 64 character limit', () => {
+    const tooLong = [];
+    for (const endpoint of serverModule.endpoints) {
+      const [method, path] = endpoint.split(' ');
+      const operationId = `${method}-${path.replace(/[^\w-]/g, '-').replace(/-+/g, '-')}`;
+      const toolId = serverModule.sanitizeToolId(operationId);
+      if (toolId.length > 64) tooLong.push({ endpoint, toolId, length: toolId.length });
+    }
+    expect(tooLong).toEqual([]);
+  });
+
+  test('every endpoint produces a unique tool ID', () => {
+    const toolIds = new Map();
+    for (const endpoint of serverModule.endpoints) {
+      const [method, path] = endpoint.split(' ');
+      const operationId = `${method}-${path.replace(/[^\w-]/g, '-').replace(/-+/g, '-')}`;
+      const toolId = serverModule.sanitizeToolId(operationId);
+      if (toolIds.has(toolId)) {
+        toolIds.get(toolId).push(endpoint);
+      } else {
+        toolIds.set(toolId, [endpoint]);
+      }
+    }
+    const duplicates = [...toolIds.entries()].filter(([, eps]) => eps.length > 1);
+    expect(duplicates).toEqual([]);
+  });
+
+  test('every endpoint resolves to a supported content type', () => {
+    const unsupported = [];
+    for (const endpoint of serverModule.endpoints) {
+      const [method, path] = endpoint.split(' ');
+      const result = serverModule.getOperationDetails(openApiSpec, method, path);
+      if (!result) continue;
+      const contentType = serverModule.getRequestContentType(result.operation);
+      if (!['application/json', 'application/x-www-form-urlencoded'].includes(contentType)) {
+        unsupported.push({ endpoint, contentType });
+      }
+    }
+    expect(unsupported).toEqual([]);
   });
 });
 
