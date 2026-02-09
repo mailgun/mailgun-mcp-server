@@ -5,6 +5,7 @@
     "type": "module",
     "main": "src/mailgun-mcp.js",
     "bin": {
+        "mcp-server": "src/mailgun-mcp.js",
         "mailgun-mcp-server": "src/mailgun-mcp.js"
     },
     "license": "Apache-2.0",

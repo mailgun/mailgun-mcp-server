@@ -283,6 +283,20 @@ describe('Mailgun MCP Server', () => {
   });
 
   describe('buildParamsSchema()', () => {
+    test('returns { paramsSchema, keyMapping } shape', () => {
+      const operation = {
+        parameters: [
+          { name: 'domain_name', in: 'path', required: true, schema: { type: 'string' } }
+        ]
+      };
+
+      const result = serverModule.buildParamsSchema(operation, {});
+
+      expect(result).toHaveProperty('paramsSchema');
+      expect(result).toHaveProperty('keyMapping');
+      expect(typeof result.keyMapping).toBe('object');
+    });
+
     test('builds schema from path and query params', () => {
       const operation = {
         parameters: [
@@ -291,12 +305,12 @@ describe('Mailgun MCP Server', () => {
         ]
       };
 
-      const result = serverModule.buildParamsSchema(operation, {});
+      const { paramsSchema } = serverModule.buildParamsSchema(operation, {});
 
-      expect(result.domain_name).toBeDefined();
-      expect(result.domain_name.isOptional()).toBe(false);
-      expect(result.limit).toBeDefined();
-      expect(result.limit.isOptional()).toBe(true);
+      expect(paramsSchema.domain_name).toBeDefined();
+      expect(paramsSchema.domain_name.isOptional()).toBe(false);
+      expect(paramsSchema.limit).toBeDefined();
+      expect(paramsSchema.limit.isOptional()).toBe(true);
     });
 
     test('builds schema including request body properties', () => {
@@ -319,21 +333,72 @@ describe('Mailgun MCP Server', () => {
         }
       };
 
-      const result = serverModule.buildParamsSchema(operation, {});
+      const { paramsSchema } = serverModule.buildParamsSchema(operation, {});
 
-      expect(result.domain_name).toBeDefined();
-      expect(result.to).toBeDefined();
-      expect(result.to.isOptional()).toBe(false);
-      expect(result.subject).toBeDefined();
-      expect(result.subject.isOptional()).toBe(true);
+      expect(paramsSchema.domain_name).toBeDefined();
+      expect(paramsSchema.to).toBeDefined();
+      expect(paramsSchema.to.isOptional()).toBe(false);
+      expect(paramsSchema.subject).toBeDefined();
+      expect(paramsSchema.subject.isOptional()).toBe(true);
     });
 
     test('handles operation with no parameters', () => {
       const operation = {};
 
-      const result = serverModule.buildParamsSchema(operation, {});
+      const { paramsSchema, keyMapping } = serverModule.buildParamsSchema(operation, {});
 
-      expect(result).toEqual({});
+      expect(paramsSchema).toEqual({});
+      expect(keyMapping).toEqual({});
+    });
+
+    test('sanitizes property keys with colons and records mapping', () => {
+      const operation = {
+        parameters: [
+          { name: 'o:tag', in: 'query', required: false, schema: { type: 'string' } },
+          { name: 'o:tracking', in: 'query', required: false, schema: { type: 'string' } }
+        ],
+        requestBody: {
+          content: {
+            'application/x-www-form-urlencoded': {
+              schema: {
+                properties: {
+                  't:version': { type: 'string', description: 'Template version' }
+                }
+              }
+            }
+          }
+        }
+      };
+
+      const { paramsSchema, keyMapping } = serverModule.buildParamsSchema(operation, {});
+
+      // Sanitized keys should be present in the schema
+      expect(paramsSchema['o_tag']).toBeDefined();
+      expect(paramsSchema['o_tracking']).toBeDefined();
+      expect(paramsSchema['t_version']).toBeDefined();
+
+      // Original keys should NOT be present
+      expect(paramsSchema['o:tag']).toBeUndefined();
+      expect(paramsSchema['o:tracking']).toBeUndefined();
+      expect(paramsSchema['t:version']).toBeUndefined();
+
+      // keyMapping should map sanitized → original
+      expect(keyMapping['o_tag']).toBe('o:tag');
+      expect(keyMapping['o_tracking']).toBe('o:tracking');
+      expect(keyMapping['t_version']).toBe('t:version');
+    });
+
+    test('does not add clean keys to keyMapping', () => {
+      const operation = {
+        parameters: [
+          { name: 'domain_name', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'limit', in: 'query', required: false, schema: { type: 'number' } }
+        ]
+      };
+
+      const { keyMapping } = serverModule.buildParamsSchema(operation, {});
+
+      expect(Object.keys(keyMapping)).toHaveLength(0);
     });
   });
 
@@ -742,5 +807,61 @@ describe('resolveReference()', () => {
     };
     expect(serverModule.resolveReference('#/components/schemas/Parent/NestedType', spec))
       .toEqual({ type: 'number' });
+  });
+});
+
+describe('sanitizePropertyKey()', () => {
+  test('replaces colons with underscores', () => {
+    expect(serverModule.sanitizePropertyKey('o:tag')).toBe('o_tag');
+    expect(serverModule.sanitizePropertyKey('o:tracking')).toBe('o_tracking');
+    expect(serverModule.sanitizePropertyKey('t:version')).toBe('t_version');
+  });
+
+  test('replaces at-signs with underscores', () => {
+    expect(serverModule.sanitizePropertyKey('@timestamp')).toBe('_timestamp');
+  });
+
+  test('leaves clean keys unchanged', () => {
+    expect(serverModule.sanitizePropertyKey('domain_name')).toBe('domain_name');
+    expect(serverModule.sanitizePropertyKey('limit')).toBe('limit');
+    expect(serverModule.sanitizePropertyKey('some.dotted.key')).toBe('some.dotted.key');
+    expect(serverModule.sanitizePropertyKey('key-with-dashes')).toBe('key-with-dashes');
+  });
+
+  test('truncates keys longer than 64 characters', () => {
+    const longKey = 'a'.repeat(100);
+    expect(serverModule.sanitizePropertyKey(longKey)).toHaveLength(64);
+  });
+
+  test('handles multiple special characters', () => {
+    expect(serverModule.sanitizePropertyKey('h:X-My-Header')).toBe('h_X-My-Header');
+    expect(serverModule.sanitizePropertyKey('v:my-var')).toBe('v_my-var');
+  });
+});
+
+describe('schema property key validation against Anthropic API pattern', () => {
+  const openApiSpec = serverModule.loadOpenApiSpec(
+    new URL('../src/openapi.yaml', import.meta.url).pathname
+  );
+  const KEY_PATTERN = /^[a-zA-Z0-9_.-]{1,64}$/;
+
+  test('all generated tool schemas have property keys matching the API pattern', () => {
+    const violations = [];
+
+    for (const endpoint of serverModule.endpoints) {
+      const [method, path] = endpoint.split(' ');
+      const details = serverModule.getOperationDetails(openApiSpec, method, path);
+      if (!details) continue;
+
+      const { paramsSchema } = serverModule.buildParamsSchema(details.operation, openApiSpec);
+
+      for (const key of Object.keys(paramsSchema)) {
+        if (!KEY_PATTERN.test(key)) {
+          violations.push({ endpoint, key });
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
   });
 });

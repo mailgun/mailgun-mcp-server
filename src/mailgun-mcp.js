@@ -372,12 +372,12 @@ export function generateToolsFromOpenApi(openApiSpec) {
       }
 
       const { operation, operationId } = operationDetails;
-      const paramsSchema = buildParamsSchema(operation, openApiSpec);
+      const { paramsSchema, keyMapping } = buildParamsSchema(operation, openApiSpec);
       const toolId = sanitizeToolId(operationId);
       const toolDescription = operation.summary || `${method.toUpperCase()} ${path}`;
       const contentType = getRequestContentType(operation);
 
-      registerTool(toolId, toolDescription, paramsSchema, method, path, operation, contentType);
+      registerTool(toolId, toolDescription, paramsSchema, method, path, operation, contentType, keyMapping);
 
     } catch (error) {
       console.error(`Failed to process endpoint ${endpoint}: ${error.message}`);
@@ -408,6 +408,16 @@ export function getOperationDetails(openApiSpec, method, path) {
 }
 
 /**
+ * Sanitizes a property key to match the Anthropic API requirement: ^[a-zA-Z0-9_.-]{1,64}
+ * Replaces any disallowed character with an underscore and truncates to 64 characters.
+ * @param {string} key - The property key to sanitize
+ * @returns {string} - Sanitized property key
+ */
+export function sanitizePropertyKey(key) {
+  return key.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
+}
+
+/**
  * Sanitizes an operation ID to be used as a tool ID
  * @param {string} operationId - The operation ID to sanitize
  * @returns {string} - Sanitized tool ID
@@ -426,21 +436,22 @@ export function sanitizeToolId(operationId) {
  */
 export function buildParamsSchema(operation, openApiSpec) {
   const paramsSchema = {};
+  const keyMapping = {};
 
   // Process path parameters
   const pathParams = operation.parameters?.filter(p => p.in === 'path') || [];
-  processParameters(pathParams, paramsSchema, openApiSpec);
+  processParameters(pathParams, paramsSchema, openApiSpec, keyMapping);
 
   // Process query parameters
   const queryParams = operation.parameters?.filter(p => p.in === 'query') || [];
-  processParameters(queryParams, paramsSchema, openApiSpec);
+  processParameters(queryParams, paramsSchema, openApiSpec, keyMapping);
 
   // Process request body if it exists
   if (operation.requestBody) {
-    processRequestBody(operation.requestBody, paramsSchema, openApiSpec);
+    processRequestBody(operation.requestBody, paramsSchema, openApiSpec, keyMapping);
   }
 
-  return paramsSchema;
+  return { paramsSchema, keyMapping };
 }
 
 /**
@@ -448,11 +459,16 @@ export function buildParamsSchema(operation, openApiSpec) {
  * @param {Array} parameters - OpenAPI parameter objects
  * @param {Object} paramsSchema - Target schema object to populate
  * @param {Object} openApiSpec - Complete OpenAPI specification
+ * @param {Object} keyMapping - Map of sanitized key → original key (populated for keys that changed)
  */
-export function processParameters(parameters, paramsSchema, openApiSpec) {
+export function processParameters(parameters, paramsSchema, openApiSpec, keyMapping = {}) {
   for (const param of parameters) {
+    const sanitizedKey = sanitizePropertyKey(param.name);
+    if (sanitizedKey !== param.name) {
+      keyMapping[sanitizedKey] = param.name;
+    }
     const zodParam = openapiToZod(param.schema, openApiSpec);
-    paramsSchema[param.name] = param.required ? zodParam : zodParam.optional();
+    paramsSchema[sanitizedKey] = param.required ? zodParam : zodParam.optional();
   }
 }
 
@@ -461,8 +477,9 @@ export function processParameters(parameters, paramsSchema, openApiSpec) {
  * @param {Object} requestBody - OpenAPI request body object
  * @param {Object} paramsSchema - Target schema object to populate
  * @param {Object} openApiSpec - Complete OpenAPI specification
+ * @param {Object} keyMapping - Map of sanitized key → original key (populated for keys that changed)
  */
-export function processRequestBody(requestBody, paramsSchema, openApiSpec) {
+export function processRequestBody(requestBody, paramsSchema, openApiSpec, keyMapping = {}) {
   if (!requestBody.content) return;
 
   // Try different content types in priority order
@@ -492,8 +509,13 @@ export function processRequestBody(requestBody, paramsSchema, openApiSpec) {
           propSchema = resolveReference(propSchema.$ref, openApiSpec);
         }
 
+        const sanitizedKey = sanitizePropertyKey(prop);
+        if (sanitizedKey !== prop) {
+          keyMapping[sanitizedKey] = prop;
+        }
+
         const zodProp = openapiToZod(propSchema, openApiSpec);
-        paramsSchema[prop] = bodySchema.required?.includes(prop)
+        paramsSchema[sanitizedKey] = bodySchema.required?.includes(prop)
           ? zodProp
           : zodProp.optional();
       }
@@ -523,15 +545,23 @@ export function resolveReference(ref, openApiSpec) {
  * @param {string} path - API endpoint path
  * @param {Object} operation - OpenAPI operation object
  * @param {string} contentType - Content type for the request body
+ * @param {Object} keyMapping - Map of sanitized key → original key
  */
-export function registerTool(toolId, toolDescription, paramsSchema, method, path, operation, contentType) {
+export function registerTool(toolId, toolDescription, paramsSchema, method, path, operation, contentType, keyMapping = {}) {
   server.tool(
     toolId,
     toolDescription,
     paramsSchema,
     async (params) => {
       try {
-        const { actualPath, remainingParams } = processPathParameters(path, operation, params);
+        // Translate sanitized parameter keys back to original Mailgun API names
+        const originalParams = {};
+        for (const [key, value] of Object.entries(params)) {
+          const originalKey = keyMapping[key] || key;
+          originalParams[originalKey] = value;
+        }
+
+        const { actualPath, remainingParams } = processPathParameters(path, operation, originalParams);
         const { queryParams, bodyParams } = separateParameters(remainingParams, operation, method);
         const finalPath = appendQueryString(actualPath, queryParams);
 
