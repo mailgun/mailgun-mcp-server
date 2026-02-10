@@ -4,6 +4,8 @@
 ## Overview
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Mailgun](https://mailgun.com), enabling MCP-compatible AI clients to interact with the Mailgun email service.
 
+> **Note:** This MCP server runs locally on your machine. Mailgun does not currently offer a hosted version of this server.
+
 ### Capabilities
 
 - **Messaging** — Send emails, retrieve stored messages, resend messages
@@ -142,6 +144,36 @@ In your MCP client config, replace the `npx` command with:
 "command": "node",
 "args": ["/path/to/mailgun-mcp-server/src/mailgun-mcp.js"]
 ```
+
+## Security Considerations
+
+### API key isolation
+
+Your Mailgun API key is passed as an environment variable and is never exposed to the AI model itself — it is only used by the MCP server process to authenticate requests. The server does not log API keys, request parameters, or response data.
+
+### Local execution
+
+The server runs locally on your machine. All communication with the Mailgun API is over HTTPS with TLS certificate validation enforced. No data is sent to third-party services beyond the Mailgun API.
+
+### API key permissions
+
+Use a dedicated Mailgun API key with permissions scoped to only the operations you need. The server exposes read and update operations but does not expose any delete operations, which limits the blast radius of unintended actions.
+
+### Rate limiting
+
+The server does not implement client-side rate limiting. Each tool call from the AI translates directly into a Mailgun API request. The server relies on Mailgun's server-side rate limits to prevent abuse — requests that exceed those limits will return an error to the AI assistant.
+
+### Prompt injection
+
+As with any MCP server, a crafted or adversarial prompt could trick the AI assistant into calling operations you did not intend — for example, modifying tracking settings or reading mailing list members. Review your AI assistant's tool-call confirmations before approving actions, especially in untrusted prompt contexts.
+
+### Webhook URLs
+
+Webhook create and update operations accept arbitrary URLs provided through the AI assistant. The MCP server passes these URLs to the Mailgun API without additional validation. Mailgun is responsible for validating webhook destinations. Ensure your AI assistant does not set webhook URLs to unintended internal or sensitive addresses.
+
+### Input validation
+
+All tool parameters are validated against the Mailgun OpenAPI specification using Zod schemas. However, validation depends on the accuracy of the OpenAPI spec, and some edge-case parameters may fall back to permissive validation. The Mailgun API performs its own server-side validation as an additional layer of protection.
 
 ## Debugging
 
