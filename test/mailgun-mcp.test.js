@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { createRequire } from 'module';
 import * as serverModule from '../src/mailgun-mcp.js';
 
 // Disable console.error and console.warn during tests
@@ -789,6 +790,18 @@ describe('endpoint validation against OpenAPI spec', () => {
       }
     }
     expect(unsupported).toEqual([]);
+  });
+});
+
+describe('USER_AGENT', () => {
+  test('includes version from package.json', () => {
+    const require = createRequire(import.meta.url);
+    const { version } = require('../package.json');
+    expect(serverModule.USER_AGENT).toBe(`Mailgun-MCP-Integration/${version}`);
+  });
+
+  test('matches expected format', () => {
+    expect(serverModule.USER_AGENT).toMatch(/^Mailgun-MCP-Integration\/\d+\.\d+\.\d+$/);
   });
 });
 
