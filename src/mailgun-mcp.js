@@ -15,10 +15,14 @@ import { createRequire } from 'module';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Load package version for server metadata and User-Agent
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json');
+
 // Initialize Model Context Protocol server
 export const server = new McpServer({
   name: "mailgun",
-  version: "1.0.0",
+  version,
 });
 
 // Mailgun API configuration
@@ -28,8 +32,6 @@ const MAILGUN_API_HOSTNAME = MAILGUN_API_REGION === "eu" ? "api.eu.mailgun.net" 
 const OPENAPI_YAML = path.resolve(__dirname, 'openapi.yaml');
 
 //User-Agent string for API requests, including version from package.json
-const require = createRequire(import.meta.url);
-const { version } = require('../package.json');
 export const USER_AGENT = `Mailgun-MCP-Integration/${version}`;
 
 
