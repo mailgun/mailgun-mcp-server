@@ -8,16 +8,21 @@ import yaml from "js-yaml";
 import fs from "node:fs";
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 
 
 // Resolve directory path when using ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Load package version for server metadata and User-Agent
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json');
+
 // Initialize Model Context Protocol server
 export const server = new McpServer({
   name: "mailgun",
-  version: "1.0.0",
+  version,
 });
 
 // Mailgun API configuration
@@ -25,6 +30,9 @@ const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY;
 const MAILGUN_API_REGION = (process.env.MAILGUN_API_REGION || "us").toLowerCase();
 const MAILGUN_API_HOSTNAME = MAILGUN_API_REGION === "eu" ? "api.eu.mailgun.net" : "api.mailgun.net";
 const OPENAPI_YAML = path.resolve(__dirname, 'openapi.yaml');
+
+//User-Agent string for API requests, including version from package.json
+export const USER_AGENT = `Mailgun-MCP-Integration/${version}`;
 
 
 // Define Mailgun API endpoints supported by this integration
@@ -155,7 +163,8 @@ export async function makeMailgunRequest(method, path, data = null, contentType 
       method: method,
       headers: {
         "Authorization": `Basic ${auth}`,
-        "Content-Type": contentType
+        "Content-Type": contentType,
+        "User-Agent": USER_AGENT
       }
     };
 
