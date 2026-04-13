@@ -22,7 +22,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Ma
 
 ## Prerequisites
 
-- Node.js (v18 or higher)
+- Node.js (v20.12 or higher)
 - Mailgun account and API key
 
 ## Quick Start
