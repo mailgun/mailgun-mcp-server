@@ -3,10 +3,11 @@
     "version": "1.0.2",
     "description": "A Model Context Protocol (MCP) server for Mailgun, enabling MCP-compatible AI clients to interact with the Mailgun email service.",
     "type": "module",
-    "main": "src/mailgun-mcp.js",
+    "main": "dist/mailgun-mcp.js",
+    "types": "dist/mailgun-mcp.d.ts",
     "bin": {
-        "mcp-server": "src/mailgun-mcp.js",
-        "mailgun-mcp-server": "src/mailgun-mcp.js"
+        "mcp-server": "dist/mailgun-mcp.js",
+        "mailgun-mcp-server": "dist/mailgun-mcp.js"
     },
     "license": "Apache-2.0",
     "author": "Mailgun Technologies, Inc",
@@ -29,11 +30,13 @@
         "node": ">=18.0.0"
     },
     "scripts": {
-        "start": "node src/mailgun-mcp.js",
-        "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-        "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
-        "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
-        "lint": "eslint ."
+        "build": "tsc && cp src/openapi.yaml dist/openapi.yaml",
+        "start": "node dist/mailgun-mcp.js",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "lint": "eslint .",
+        "prepublishOnly": "npm run build"
     },
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.7.0",
@@ -41,9 +44,10 @@
         "zod": "^3.24.2"
     },
     "devDependencies": {
-        "@eslint/js": "^10.0.1",
-        "@jest/globals": "^29.0.0",
+        "@types/js-yaml": "^4.0.9",
+        "@types/node": "^25.5.2",
         "eslint": "^10.0.0",
-        "jest": "^29.0.0"
+        "typescript": "^6.0.2",
+        "vitest": "^4.1.3"
     }
 }
