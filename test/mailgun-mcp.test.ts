@@ -664,8 +664,8 @@ describe("openapiToZod()", () => {
 
   test("converts string with email format", () => {
     const result = openapiToZod({ type: "string", format: "email" }, {});
-    expect(zodDef(result).typeName).toBe("ZodString");
-    expect(zodDef(result).checks!.some((c: { kind: string }) => c.kind === "email")).toBe(true);
+    expect(result.safeParse("user@example.com").success).toBe(true);
+    expect(result.safeParse("not-an-email").success).toBe(false);
   });
 
   test("converts string with uri format", () => {

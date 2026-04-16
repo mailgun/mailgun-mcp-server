@@ -70,17 +70,13 @@ function convertStringSchema(schema: OpenApiSchema): z.ZodType {
   if (schema.enum) {
     return z.enum(schema.enum).describe(schema.description || "");
   }
-
-  let zodString = z.string();
   if (schema.format === "email") {
-    zodString = zodString.email();
+    return z.email().describe(schema.description || "");
   }
-  // Early return preserves the "URI: " prefix; Zod's .describe() is immutable
-  // so a subsequent .describe() call would overwrite it.
   if (schema.format === "uri") {
-    return zodString.describe(`URI: ${schema.description || ""}`);
+    return z.string().describe(`URI: ${schema.description || ""}`);
   }
-  return zodString.describe(schema.description || "");
+  return z.string().describe(schema.description || "");
 }
 
 function convertNumberSchema(schema: OpenApiSchema): z.ZodType {
