@@ -21,7 +21,7 @@ import type { OpenApiOperation, OpenApiParameter, OpenApiRequestBody, OpenApiSpe
 
 type ZodDefInternals = {
   typeName?: string;
-  values?: readonly string[];
+  values?: ReadonlyArray<string | number>;
   checks?: ReadonlyArray<{ kind: string; value?: number }>;
   description?: string;
 };
@@ -50,6 +50,9 @@ function zodDef(schema: z.ZodType): ZodDefInternals {
 
   return { typeName, values, checks, description: schema.description };
 }
+
+// Zod 4 deprecated `.isOptional()`; the recommended replacement is probing with safeParse(undefined).
+const isOptional = (schema: z.ZodType): boolean => schema.safeParse(undefined).success;
 
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
@@ -313,24 +316,24 @@ describe("Mailgun MCP Server", () => {
       const params: OpenApiParameter[] = [
         { name: "domain", in: "path", required: true, schema: { type: "string" } },
       ];
-      const schema: Record<string, { isOptional(): boolean }> = {};
+      const schema: Record<string, z.ZodType> = {};
 
-      processParameters(params, schema as never, {});
+      processParameters(params, schema, {});
 
       expect(schema.domain).toBeDefined();
-      expect(schema.domain.isOptional()).toBe(false);
+      expect(isOptional(schema.domain)).toBe(false);
     });
 
     test("processes optional parameters", () => {
       const params: OpenApiParameter[] = [
         { name: "limit", in: "query", required: false, schema: { type: "number" } },
       ];
-      const schema: Record<string, { isOptional(): boolean }> = {};
+      const schema: Record<string, z.ZodType> = {};
 
-      processParameters(params, schema as never, {});
+      processParameters(params, schema, {});
 
       expect(schema.limit).toBeDefined();
-      expect(schema.limit.isOptional()).toBe(true);
+      expect(isOptional(schema.limit)).toBe(true);
     });
 
     test("processes multiple parameters", () => {
@@ -356,9 +359,9 @@ describe("Mailgun MCP Server", () => {
           schema: { type: "integer" },
         },
       ];
-      const schema: Record<string, { _def: { description?: string } }> = {};
+      const schema: Record<string, z.ZodType> = {};
 
-      processParameters(params, schema as never, {});
+      processParameters(params, schema, {});
 
       expect(schema.limit.description).toBe("Max count of items");
     });
@@ -373,9 +376,9 @@ describe("Mailgun MCP Server", () => {
           schema: { type: "integer", description: "Schema-level desc" },
         },
       ];
-      const schema: Record<string, { _def: { description?: string } }> = {};
+      const schema: Record<string, z.ZodType> = {};
 
-      processParameters(params, schema as never, {});
+      processParameters(params, schema, {});
 
       expect(schema.limit.description).toBe("Schema-level desc");
     });
@@ -407,9 +410,9 @@ describe("Mailgun MCP Server", () => {
       const { paramsSchema } = buildParamsSchema(operation, {});
 
       expect(paramsSchema.domain_name).toBeDefined();
-      expect(paramsSchema.domain_name.isOptional()).toBe(false);
+      expect(isOptional(paramsSchema.domain_name)).toBe(false);
       expect(paramsSchema.limit).toBeDefined();
-      expect(paramsSchema.limit.isOptional()).toBe(true);
+      expect(isOptional(paramsSchema.limit)).toBe(true);
     });
 
     test("builds schema including request body properties", () => {
@@ -436,9 +439,9 @@ describe("Mailgun MCP Server", () => {
 
       expect(paramsSchema.domain_name).toBeDefined();
       expect(paramsSchema.to).toBeDefined();
-      expect(paramsSchema.to.isOptional()).toBe(false);
+      expect(isOptional(paramsSchema.to)).toBe(false);
       expect(paramsSchema.subject).toBeDefined();
-      expect(paramsSchema.subject.isOptional()).toBe(true);
+      expect(isOptional(paramsSchema.subject)).toBe(true);
     });
 
     test("handles operation with no parameters", () => {
@@ -513,14 +516,14 @@ describe("Mailgun MCP Server", () => {
           },
         },
       };
-      const schema: Record<string, { isOptional(): boolean }> = {};
+      const schema: Record<string, z.ZodType> = {};
 
-      processRequestBody(requestBody, schema as never, {});
+      processRequestBody(requestBody, schema, {});
 
       expect(schema.name).toBeDefined();
-      expect(schema.name.isOptional()).toBe(false);
+      expect(isOptional(schema.name)).toBe(false);
       expect(schema.count).toBeDefined();
-      expect(schema.count.isOptional()).toBe(true);
+      expect(isOptional(schema.count)).toBe(true);
     });
 
     test("processes form-urlencoded request body", () => {
@@ -565,12 +568,12 @@ describe("Mailgun MCP Server", () => {
           },
         },
       };
-      const schema: Record<string, { isOptional(): boolean }> = {};
+      const schema: Record<string, z.ZodType> = {};
 
-      processRequestBody(requestBody, schema as never, spec);
+      processRequestBody(requestBody, schema, spec);
 
       expect(schema.to).toBeDefined();
-      expect(schema.to.isOptional()).toBe(false);
+      expect(isOptional(schema.to)).toBe(false);
     });
 
     test("resolves $ref in body properties", () => {
