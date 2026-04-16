@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["eslint", "typescript", "unicorn", "node"],
+  "plugins": ["eslint", "typescript", "unicorn", "node", "vitest"],
   "categories": {
     "correctness": "error"
   },
@@ -17,4 +17,3 @@
     ]
   }
 }
-

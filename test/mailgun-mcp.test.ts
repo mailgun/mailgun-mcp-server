@@ -61,11 +61,11 @@ const isOptional = (schema: z.ZodType): boolean => schema.safeParse(undefined).s
 
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
-console.error = vi.fn();
-console.warn = vi.fn();
+console.error = vi.fn<typeof console.error>();
+console.warn = vi.fn<typeof console.warn>();
 
 const originalProcessExit = process.exit;
-process.exit = vi.fn() as never;
+process.exit = vi.fn<typeof process.exit>();
 
 describe("Mailgun MCP Server", () => {
   describe("processPathParameters()", () => {
@@ -619,7 +619,7 @@ describe("Mailgun MCP Server", () => {
     test("throws error for non-existent file", () => {
       expect(() => {
         loadOpenApiSpec("/nonexistent/path/openapi.yaml");
-      }).toThrow();
+      }).toThrow(/ENOENT|no such file/i);
     });
   });
 
@@ -627,7 +627,7 @@ describe("Mailgun MCP Server", () => {
     test("warns for endpoints not found in spec", () => {
       (console.warn as ReturnType<typeof vi.fn>).mockClear();
 
-      generateToolsFromOpenApi({ paths: {} }, { tool: vi.fn() } as never);
+      generateToolsFromOpenApi({ paths: {} }, { tool: vi.fn<() => void>() } as never);
 
       expect(console.warn).toHaveBeenCalled();
     });
@@ -644,7 +644,7 @@ describe("Mailgun MCP Server", () => {
         },
       };
 
-      expect(() => generateToolsFromOpenApi(spec, { tool: vi.fn() } as never)).not.toThrow();
+      expect(() => generateToolsFromOpenApi(spec, { tool: vi.fn<() => void>() } as never)).not.toThrow();
     });
   });
 
