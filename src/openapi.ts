@@ -99,15 +99,19 @@ function buildObjectShape(
 ): Record<string, z.ZodType> {
   const shape: Record<string, z.ZodType> = {};
   for (const [key, prop] of Object.entries(schema.properties!)) {
-    shape[key] = schema.required?.includes(key)
-      ? openapiToZod(prop, fullSpec)
-      : openapiToZod(prop, fullSpec).optional();
+    const inner = openapiToZod(prop, fullSpec);
+    if (schema.required?.includes(key)) {
+      shape[key] = inner;
+    } else {
+      const optional = inner.optional();
+      shape[key] = inner.description ? optional.describe(inner.description) : optional;
+    }
   }
   return shape;
 }
 
 function convertObjectSchema(schema: OpenApiSchema, fullSpec: OpenApiSpec): z.ZodType {
-  if (!schema.properties) return z.record(z.any());
+  if (!schema.properties) return z.record(z.string(), z.any());
   return z.object(buildObjectShape(schema, fullSpec)).describe(schema.description || "");
 }
 

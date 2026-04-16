@@ -9,6 +9,13 @@ import type {
 } from "./types.js";
 import { openapiToZod, resolveReference } from "./openapi.js";
 
+// Zod 4's `.optional()` doesn't copy the inner description onto the wrapper, so
+// tool parameter descriptions would disappear for optional fields. Re-apply it.
+function optionalPreservingDescription(schema: z.ZodType): z.ZodType {
+  const optional = schema.optional();
+  return schema.description ? optional.describe(schema.description) : optional;
+}
+
 export function sanitizePropertyKey(key: string): string {
   return key.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 64);
 }
@@ -57,7 +64,7 @@ export function processParameters(
       ? { ...param.schema, description: param.description }
       : param.schema;
     const zodParam = openapiToZod(schema, openApiSpec);
-    paramsSchema[sanitizedKey] = param.required ? zodParam : zodParam.optional();
+    paramsSchema[sanitizedKey] = param.required ? zodParam : optionalPreservingDescription(zodParam);
   }
 }
 
@@ -100,7 +107,7 @@ export function processRequestBody(
         const zodProp = openapiToZod(propSchema, openApiSpec);
         paramsSchema[sanitizedKey] = bodySchema.required?.includes(prop)
           ? zodProp
-          : zodProp.optional();
+          : optionalPreservingDescription(zodProp);
       }
     }
 

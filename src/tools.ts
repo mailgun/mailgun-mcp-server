@@ -1,5 +1,4 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
 import type {
   OpenApiOperation,
@@ -11,13 +10,6 @@ import { endpoints } from "./endpoints.js";
 import { makeMailgunRequest } from "./api.js";
 import { getOperationDetails, getRequestContentType } from "./openapi.js";
 import { buildParamsSchema, sanitizeToolId } from "./schema.js";
-
-/** OpenAPI-derived Zod shapes are too deep for `McpServer.registerTool` generic inference (TS2589). */
-type RegisterToolOpenApi = (
-  name: string,
-  config: { description?: string; inputSchema?: z.ZodRawShape },
-  cb: (args: Record<string, unknown>) => CallToolResult | Promise<CallToolResult>
-) => void;
 
 export function generateToolsFromOpenApi(openApiSpec: OpenApiSpec, server: McpServer): void {
   for (const endpoint of endpoints) {
@@ -54,8 +46,7 @@ export function registerTool(
   contentType: string,
   keyMapping: Record<string, string> = {}
 ): void {
-  const registerMcpTool = server.registerTool as RegisterToolOpenApi;
-  registerMcpTool(
+  server.registerTool(
     toolId,
     {
       description: toolDescription,

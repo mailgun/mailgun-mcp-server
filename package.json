@@ -31,22 +31,25 @@
     },
     "scripts": {
         "build": "tsc && cp src/openapi.yaml dist/openapi.yaml",
+        "fmt": "oxfmt",
+        "fmt:check": "oxfmt --check",
+        "lint": "eslint .",
+        "prepublishOnly": "npm run build",
         "start": "node dist/mailgun-mcp.js",
         "test": "vitest run",
-        "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
-        "lint": "eslint .",
-        "prepublishOnly": "npm run build"
+        "test:watch": "vitest"
     },
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.7.0",
         "js-yaml": "^4.1.0",
-        "zod": "^3.24.2"
+        "zod": "^4.3.6"
     },
     "devDependencies": {
         "@types/js-yaml": "^4.0.9",
         "@types/node": "^25.5.2",
         "eslint": "^10.0.0",
+        "oxfmt": "^0.45.0",
         "typescript": "^6.0.2",
         "typescript-eslint": "^8.58.2",
         "vitest": "^4.1.3"

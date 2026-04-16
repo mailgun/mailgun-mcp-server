@@ -19,24 +19,36 @@ import {
 import { endpoints } from "../src/endpoints.js";
 import type { OpenApiOperation, OpenApiParameter, OpenApiRequestBody, OpenApiSpec } from "../src/types.js";
 
-/**
- * Internal type for Zod definitions
- */
-type ZodDefInternals = z.ZodTypeDef & {
+type ZodDefInternals = {
   typeName?: string;
   values?: readonly string[];
   checks?: ReadonlyArray<{ kind: string; value?: number }>;
+  description?: string;
 };
 
-/**
- * Return the internal definition of a Zod schema
- * as an object with the following properties:
- * - typeName: The name of the Zod type (e.g. "ZodString", "ZodNumber", "ZodBoolean", "ZodArray", "ZodObject", "ZodRecord")
- * - values: The values of the Zod type (e.g. ["yes", "no", "maybe"] for a ZodEnum)
- * - checks: The checks of the Zod type (e.g. [{ kind: "min", value: 1 } for a ZodNumber)
- */
-function zodDef(schema: z.ZodTypeAny): ZodDefInternals {
-  return schema._def as ZodDefInternals;
+// Zod 4 renamed `_def.typeName` → `def.type` (lowercase, e.g. "string"), replaced enum
+// `values` with `entries`, reshaped check objects, and moved `description` off the def
+// onto the schema. Normalize back to the shape the assertions below expect.
+function zodDef(schema: z.ZodType): ZodDefInternals {
+  const typeName = schema.def.type
+    ? "Zod" + schema.def.type.charAt(0).toUpperCase() + schema.def.type.slice(1)
+    : undefined;
+
+  const values = schema instanceof z.ZodEnum ? Object.values(schema.def.entries) : undefined;
+
+  const checks = schema.def.checks?.map((c) => {
+    const cdef = c._zod.def;
+    let kind: string = cdef.check ?? "";
+    if (kind === "greater_than") kind = "min";
+    else if (kind === "less_than") kind = "max";
+    else if (kind === "string_format" && "format" in cdef && typeof cdef.format === "string") {
+      kind = cdef.format;
+    }
+    const value = "value" in cdef && typeof cdef.value === "number" ? cdef.value : undefined;
+    return { kind, value };
+  });
+
+  return { typeName, values, checks, description: schema.description };
 }
 
 const originalConsoleError = console.error;
@@ -348,7 +360,7 @@ describe("Mailgun MCP Server", () => {
 
       processParameters(params, schema as never, {});
 
-      expect(schema.limit._def.description).toBe("Max count of items");
+      expect(schema.limit.description).toBe("Max count of items");
     });
 
     test("preserves schema-level description over parameter-level description", () => {
@@ -365,7 +377,7 @@ describe("Mailgun MCP Server", () => {
 
       processParameters(params, schema as never, {});
 
-      expect(schema.limit._def.description).toBe("Schema-level desc");
+      expect(schema.limit.description).toBe("Schema-level desc");
     });
   });
 
