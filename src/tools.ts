@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
 import type {
   OpenApiOperation,
@@ -10,6 +11,13 @@ import { endpoints } from "./endpoints.js";
 import { makeMailgunRequest } from "./api.js";
 import { getOperationDetails, getRequestContentType } from "./openapi.js";
 import { buildParamsSchema, sanitizeToolId } from "./schema.js";
+
+/** OpenAPI-derived Zod shapes are too deep for `McpServer.registerTool` generic inference (TS2589). */
+type RegisterToolOpenApi = (
+  name: string,
+  config: { description?: string; inputSchema?: z.ZodRawShape },
+  cb: (args: Record<string, unknown>) => CallToolResult | Promise<CallToolResult>
+) => void;
 
 export function generateToolsFromOpenApi(openApiSpec: OpenApiSpec, server: McpServer): void {
   for (const endpoint of endpoints) {
@@ -46,49 +54,53 @@ export function registerTool(
   contentType: string,
   keyMapping: Record<string, string> = {}
 ): void {
-  const handler = async (params: Record<string, unknown>) => {
-    try {
-      const originalParams: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(params)) {
-        const originalKey = keyMapping[key] || key;
-        originalParams[originalKey] = value;
+  const registerMcpTool = server.registerTool as RegisterToolOpenApi;
+  registerMcpTool(
+    toolId,
+    {
+      description: toolDescription,
+      inputSchema: paramsSchema,
+    },
+    async (params) => {
+      try {
+        const originalParams: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(params)) {
+          const originalKey = keyMapping[key] || key;
+          originalParams[originalKey] = value;
+        }
+
+        const { actualPath, remainingParams } = processPathParameters(path, operation, originalParams);
+        const { queryParams, bodyParams } = separateParameters(remainingParams, operation, method);
+        const finalPath = appendQueryString(actualPath, queryParams);
+
+        const result = await makeMailgunRequest(
+          method.toUpperCase(),
+          finalPath,
+          method.toUpperCase() === "GET" ? null : bodyParams,
+          contentType
+        );
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `${method.toUpperCase()} ${finalPath} completed successfully:\n${JSON.stringify(result, null, 2)}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${(error as Error).message || String(error)}`,
+            },
+          ],
+        };
       }
-
-      const { actualPath, remainingParams } = processPathParameters(path, operation, originalParams);
-      const { queryParams, bodyParams } = separateParameters(remainingParams, operation, method);
-      const finalPath = appendQueryString(actualPath, queryParams);
-
-      const result = await makeMailgunRequest(
-        method.toUpperCase(),
-        finalPath,
-        method.toUpperCase() === "GET" ? null : bodyParams,
-        contentType
-      );
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `${method.toUpperCase()} ${finalPath} completed successfully:\n${JSON.stringify(result, null, 2)}`,
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text" as const,
-            text: `Error: ${(error as Error).message || String(error)}`,
-          },
-        ],
-      };
     }
-  };
-
-  // Cast needed: dynamically-built schemas trigger TS2589 with the SDK's deep generics
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (server.tool as (...args: any[]) => void)(toolId, toolDescription, paramsSchema, handler);
+  );
 }
 
 export function processPathParameters(
