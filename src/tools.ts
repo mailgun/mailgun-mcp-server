@@ -56,6 +56,7 @@ export function registerTool(
   contentType: string,
   keyMapping: Record<string, string> = {},
 ): void {
+  const httpMethod = method.toUpperCase();
   server.registerTool(
     toolId,
     {
@@ -79,9 +80,9 @@ export function registerTool(
         const finalPath = appendQueryString(actualPath, queryParams);
 
         const result = await makeMailgunRequest(
-          method.toUpperCase(),
+          httpMethod,
           finalPath,
-          method.toUpperCase() === "GET" ? null : bodyParams,
+          httpMethod === "GET" ? null : bodyParams,
           contentType,
         );
 
@@ -89,7 +90,7 @@ export function registerTool(
           content: [
             {
               type: "text" as const,
-              text: `${method.toUpperCase()} ${finalPath} completed successfully:\n${JSON.stringify(result, null, 2)}`,
+              text: `${httpMethod} ${finalPath} completed successfully:\n${JSON.stringify(result, null, 2)}`,
             },
           ],
         };
@@ -99,7 +100,7 @@ export function registerTool(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${(error as Error).message || String(error)}`,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
         };
@@ -137,23 +138,22 @@ export function separateParameters(
   operation: OpenApiOperation,
   method: string,
 ): SeparatedParameters {
+  if (method.toUpperCase() === "GET") {
+    return { queryParams: { ...params }, bodyParams: {} };
+  }
+
   const queryParams: Record<string, unknown> = {};
   const bodyParams: Record<string, unknown> = {};
-
-  const definedQueryParams =
-    operation.parameters?.filter((p) => p.in === "query").map((p) => p.name) || [];
+  const definedQueryParams = new Set(
+    operation.parameters?.filter((p) => p.in === "query").map((p) => p.name),
+  );
 
   for (const [key, value] of Object.entries(params)) {
-    if (definedQueryParams.includes(key)) {
+    if (definedQueryParams.has(key)) {
       queryParams[key] = value;
     } else {
       bodyParams[key] = value;
     }
-  }
-
-  if (method.toUpperCase() === "GET") {
-    Object.assign(queryParams, bodyParams);
-    Object.keys(bodyParams).forEach((key) => delete bodyParams[key]);
   }
 
   return { queryParams, bodyParams };

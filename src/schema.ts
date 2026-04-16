@@ -87,13 +87,7 @@ export function processRequestBody(
     }
 
     if (bodySchema?.properties) {
-      for (const [prop, schema] of Object.entries(bodySchema.properties)) {
-        let propSchema: OpenApiSchema = schema;
-
-        if (propSchema.$ref) {
-          propSchema = resolveReference(propSchema.$ref, openApiSpec);
-        }
-
+      for (const [prop, propSchema] of Object.entries(bodySchema.properties)) {
         const sanitizedKey = sanitizePropertyKey(prop);
         if (sanitizedKey !== prop) {
           keyMapping[sanitizedKey] = prop;
