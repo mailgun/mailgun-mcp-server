@@ -25,7 +25,7 @@ export function sanitizeToolId(operationId: string): string {
 
 export function buildParamsSchema(
   operation: OpenApiOperation,
-  openApiSpec: OpenApiSpec
+  openApiSpec: OpenApiSpec,
 ): ParamsSchemaResult {
   const paramsSchema: Record<string, z.ZodType> = {};
   const keyMapping: Record<string, string> = {};
@@ -47,16 +47,17 @@ export function processParameters(
   parameters: OpenApiParameter[],
   paramsSchema: Record<string, z.ZodType>,
   openApiSpec: OpenApiSpec,
-  keyMapping: Record<string, string> = {}
+  keyMapping: Record<string, string> = {},
 ): void {
   for (const param of parameters) {
     const sanitizedKey = sanitizePropertyKey(param.name);
     if (sanitizedKey !== param.name) {
       keyMapping[sanitizedKey] = param.name;
     }
-    const schema = param.description && !param.schema?.description
-      ? { ...param.schema, description: param.description }
-      : param.schema;
+    const schema =
+      param.description && !param.schema?.description
+        ? { ...param.schema, description: param.description }
+        : param.schema;
     const zodParam = openapiToZod(schema, openApiSpec);
     paramsSchema[sanitizedKey] = param.required ? zodParam : toOptional(zodParam);
   }
@@ -66,7 +67,7 @@ export function processRequestBody(
   requestBody: OpenApiRequestBody,
   paramsSchema: Record<string, z.ZodType>,
   openApiSpec: OpenApiSpec,
-  keyMapping: Record<string, string> = {}
+  keyMapping: Record<string, string> = {},
 ): void {
   if (!requestBody.content) return;
 

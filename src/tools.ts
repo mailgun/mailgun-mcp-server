@@ -28,7 +28,17 @@ export function generateToolsFromOpenApi(openApiSpec: OpenApiSpec, server: McpSe
       const toolDescription = operation.summary || `${method.toUpperCase()} ${path}`;
       const contentType = getRequestContentType(operation);
 
-      registerTool(server, toolId, toolDescription, paramsSchema, method, path, operation, contentType, keyMapping);
+      registerTool(
+        server,
+        toolId,
+        toolDescription,
+        paramsSchema,
+        method,
+        path,
+        operation,
+        contentType,
+        keyMapping,
+      );
     } catch (error) {
       console.error(`Failed to process endpoint ${endpoint}: ${(error as Error).message}`);
     }
@@ -44,7 +54,7 @@ export function registerTool(
   path: string,
   operation: OpenApiOperation,
   contentType: string,
-  keyMapping: Record<string, string> = {}
+  keyMapping: Record<string, string> = {},
 ): void {
   server.registerTool(
     toolId,
@@ -60,7 +70,11 @@ export function registerTool(
           originalParams[originalKey] = value;
         }
 
-        const { actualPath, remainingParams } = processPathParameters(path, operation, originalParams);
+        const { actualPath, remainingParams } = processPathParameters(
+          path,
+          operation,
+          originalParams,
+        );
         const { queryParams, bodyParams } = separateParameters(remainingParams, operation, method);
         const finalPath = appendQueryString(actualPath, queryParams);
 
@@ -68,7 +82,7 @@ export function registerTool(
           method.toUpperCase(),
           finalPath,
           method.toUpperCase() === "GET" ? null : bodyParams,
-          contentType
+          contentType,
         );
 
         return {
@@ -90,14 +104,14 @@ export function registerTool(
           ],
         };
       }
-    }
+    },
   );
 }
 
 export function processPathParameters(
   path: string,
   operation: OpenApiOperation,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
 ): PathParametersResult {
   let actualPath = path;
   const pathParams = operation.parameters?.filter((p) => p.in === "path") || [];
@@ -107,7 +121,7 @@ export function processPathParameters(
     if (param.name in params && params[param.name] !== undefined) {
       actualPath = actualPath.replace(
         `{${param.name}}`,
-        encodeURIComponent(String(params[param.name]))
+        encodeURIComponent(String(params[param.name])),
       );
       delete remainingParams[param.name];
     } else {
@@ -121,7 +135,7 @@ export function processPathParameters(
 export function separateParameters(
   params: Record<string, unknown>,
   operation: OpenApiOperation,
-  method: string
+  method: string,
 ): SeparatedParameters {
   const queryParams: Record<string, unknown> = {};
   const bodyParams: Record<string, unknown> = {};

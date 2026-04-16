@@ -17,7 +17,12 @@ import {
   sanitizePropertyKey,
 } from "../src/schema.js";
 import { endpoints } from "../src/endpoints.js";
-import type { OpenApiOperation, OpenApiParameter, OpenApiRequestBody, OpenApiSpec } from "../src/types.js";
+import type {
+  OpenApiOperation,
+  OpenApiParameter,
+  OpenApiRequestBody,
+  OpenApiSpec,
+} from "../src/types.js";
 
 type ZodDefInternals = {
   typeName?: string;
@@ -684,7 +689,7 @@ describe("openapiToZod()", () => {
   test("converts enum schema with description", () => {
     const result = openapiToZod(
       { type: "string", enum: ["yes", "no"], description: "Enable tracking" },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodEnum");
     expect(zodDef(result).values).toEqual(["yes", "no"]);
@@ -699,14 +704,18 @@ describe("openapiToZod()", () => {
         maximum: 100,
         description: "A constrained number",
       },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodNumber");
     expect(
-      zodDef(result).checks!.some((c: { kind: string; value?: number }) => c.kind === "min" && c.value === 1)
+      zodDef(result).checks!.some(
+        (c: { kind: string; value?: number }) => c.kind === "min" && c.value === 1,
+      ),
     ).toBe(true);
     expect(
-      zodDef(result).checks!.some((c: { kind: string; value?: number }) => c.kind === "max" && c.value === 100)
+      zodDef(result).checks!.some(
+        (c: { kind: string; value?: number }) => c.kind === "max" && c.value === 100,
+      ),
     ).toBe(true);
   });
 
@@ -727,7 +736,7 @@ describe("openapiToZod()", () => {
         items: { type: "string" },
         description: "A list",
       },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodArray");
   });
@@ -743,7 +752,7 @@ describe("openapiToZod()", () => {
         required: ["name"],
         description: "A person",
       },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodObject");
   });
@@ -761,7 +770,7 @@ describe("openapiToZod()", () => {
         },
         required: ["name"],
       },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodObject");
   });
@@ -771,7 +780,7 @@ describe("openapiToZod()", () => {
       {
         oneOf: [{ type: "string" }, { type: "number" }],
       },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodUnion");
   });
@@ -781,7 +790,7 @@ describe("openapiToZod()", () => {
       {
         anyOf: [{ type: "string" }, { type: "boolean" }],
       },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodUnion");
   });
@@ -802,7 +811,7 @@ describe("openapiToZod()", () => {
   test("handles unresolvable $ref with fallback", () => {
     const result = openapiToZod(
       { $ref: "#/components/schemas/Missing" },
-      { components: { schemas: {} } }
+      { components: { schemas: {} } },
     );
     expect(zodDef(result).typeName).toBe("ZodAny");
   });
@@ -810,7 +819,7 @@ describe("openapiToZod()", () => {
   test("handles EventSeverityType $ref fallback", () => {
     const result = openapiToZod(
       { $ref: "#/components/schemas/EventSeverityType" },
-      { components: { schemas: {} } }
+      { components: { schemas: {} } },
     );
     expect(zodDef(result).typeName).toBe("ZodEnum");
     expect(zodDef(result).values).toEqual(["temporary", "permanent"]);
@@ -869,9 +878,7 @@ describe("getOperationDetails()", () => {
 });
 
 describe("endpoint validation against OpenAPI spec", () => {
-  const openApiSpec = loadOpenApiSpec(
-    new URL("../src/openapi.yaml", import.meta.url).pathname
-  );
+  const openApiSpec = loadOpenApiSpec(new URL("../src/openapi.yaml", import.meta.url).pathname);
 
   test("every endpoint matches a path and method in the OpenAPI spec", () => {
     const missing: string[] = [];
@@ -982,9 +989,7 @@ describe("sanitizePropertyKey()", () => {
 });
 
 describe("schema property key validation against Anthropic API pattern", () => {
-  const openApiSpec = loadOpenApiSpec(
-    new URL("../src/openapi.yaml", import.meta.url).pathname
-  );
+  const openApiSpec = loadOpenApiSpec(new URL("../src/openapi.yaml", import.meta.url).pathname);
   const KEY_PATTERN = /^[a-zA-Z0-9_.-]{1,64}$/;
 
   test("all generated tool schemas have property keys matching the API pattern", () => {
