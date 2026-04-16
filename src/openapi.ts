@@ -7,6 +7,7 @@ import type {
   OpenApiOperation,
   OperationDetails,
 } from "./types.js";
+import { toOptional } from "./zod-utils.js";
 
 export function loadOpenApiSpec(filePath: string): OpenApiSpec {
   try {
@@ -100,12 +101,7 @@ function buildObjectShape(
   const shape: Record<string, z.ZodType> = {};
   for (const [key, prop] of Object.entries(schema.properties!)) {
     const inner = openapiToZod(prop, fullSpec);
-    if (schema.required?.includes(key)) {
-      shape[key] = inner;
-    } else {
-      const optional = inner.optional();
-      shape[key] = inner.description ? optional.describe(inner.description) : optional;
-    }
+    shape[key] = schema.required?.includes(key) ? inner : toOptional(inner);
   }
   return shape;
 }
