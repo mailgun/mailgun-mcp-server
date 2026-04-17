@@ -8,6 +8,7 @@ import type {
   ParamsSchemaResult,
 } from "./types.js";
 import { openapiToZod, resolveReference } from "./openapi.js";
+import { toOptional } from "./zod-utils.js";
 
 export function sanitizePropertyKey(key: string): string {
   return key.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 64);
@@ -24,7 +25,7 @@ export function sanitizeToolId(operationId: string): string {
 
 export function buildParamsSchema(
   operation: OpenApiOperation,
-  openApiSpec: OpenApiSpec
+  openApiSpec: OpenApiSpec,
 ): ParamsSchemaResult {
   const paramsSchema: Record<string, z.ZodType> = {};
   const keyMapping: Record<string, string> = {};
@@ -46,18 +47,19 @@ export function processParameters(
   parameters: OpenApiParameter[],
   paramsSchema: Record<string, z.ZodType>,
   openApiSpec: OpenApiSpec,
-  keyMapping: Record<string, string> = {}
+  keyMapping: Record<string, string> = {},
 ): void {
   for (const param of parameters) {
     const sanitizedKey = sanitizePropertyKey(param.name);
     if (sanitizedKey !== param.name) {
       keyMapping[sanitizedKey] = param.name;
     }
-    const schema = param.description && !param.schema?.description
-      ? { ...param.schema, description: param.description }
-      : param.schema;
+    const schema =
+      param.description && !param.schema?.description
+        ? { ...param.schema, description: param.description }
+        : param.schema;
     const zodParam = openapiToZod(schema, openApiSpec);
-    paramsSchema[sanitizedKey] = param.required ? zodParam : zodParam.optional();
+    paramsSchema[sanitizedKey] = param.required ? zodParam : toOptional(zodParam);
   }
 }
 
@@ -65,7 +67,7 @@ export function processRequestBody(
   requestBody: OpenApiRequestBody,
   paramsSchema: Record<string, z.ZodType>,
   openApiSpec: OpenApiSpec,
-  keyMapping: Record<string, string> = {}
+  keyMapping: Record<string, string> = {},
 ): void {
   if (!requestBody.content) return;
 
@@ -85,13 +87,7 @@ export function processRequestBody(
     }
 
     if (bodySchema?.properties) {
-      for (const [prop, schema] of Object.entries(bodySchema.properties)) {
-        let propSchema: OpenApiSchema = schema;
-
-        if (propSchema.$ref) {
-          propSchema = resolveReference(propSchema.$ref, openApiSpec);
-        }
-
+      for (const [prop, propSchema] of Object.entries(bodySchema.properties)) {
         const sanitizedKey = sanitizePropertyKey(prop);
         if (sanitizedKey !== prop) {
           keyMapping[sanitizedKey] = prop;
@@ -100,7 +96,7 @@ export function processRequestBody(
         const zodProp = openapiToZod(propSchema, openApiSpec);
         paramsSchema[sanitizedKey] = bodySchema.required?.includes(prop)
           ? zodProp
-          : zodProp.optional();
+          : toOptional(zodProp);
       }
     }
 

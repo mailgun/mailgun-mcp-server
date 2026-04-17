@@ -5,7 +5,7 @@ export async function makeMailgunRequest(
   method: string,
   requestPath: string,
   data: Record<string, unknown> | null = null,
-  contentType: string = "application/x-www-form-urlencoded"
+  contentType: string = "application/x-www-form-urlencoded",
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const cleanPath = requestPath.startsWith("/") ? requestPath.substring(1) : requestPath;

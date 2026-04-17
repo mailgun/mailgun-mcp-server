@@ -1,4 +1,4 @@
-export const endpoints: string[] = [
+export const endpoints = [
   // Messages
   "POST /v3/{domain_name}/messages",
   "GET /v3/domains/{domain_name}/messages/{storage_key}",
@@ -102,4 +102,4 @@ export const endpoints: string[] = [
 
   // Account Limits
   "GET /v5/accounts/limit/custom/monthly",
-];
+] as const;

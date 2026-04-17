@@ -28,7 +28,17 @@ export function generateToolsFromOpenApi(openApiSpec: OpenApiSpec, server: McpSe
       const toolDescription = operation.summary || `${method.toUpperCase()} ${path}`;
       const contentType = getRequestContentType(operation);
 
-      registerTool(server, toolId, toolDescription, paramsSchema, method, path, operation, contentType, keyMapping);
+      registerTool(
+        server,
+        toolId,
+        toolDescription,
+        paramsSchema,
+        method,
+        path,
+        operation,
+        contentType,
+        keyMapping,
+      );
     } catch (error) {
       console.error(`Failed to process endpoint ${endpoint}: ${(error as Error).message}`);
     }
@@ -44,57 +54,65 @@ export function registerTool(
   path: string,
   operation: OpenApiOperation,
   contentType: string,
-  keyMapping: Record<string, string> = {}
+  keyMapping: Record<string, string> = {},
 ): void {
-  const handler = async (params: Record<string, unknown>) => {
-    try {
-      const originalParams: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(params)) {
-        const originalKey = keyMapping[key] || key;
-        originalParams[originalKey] = value;
+  const httpMethod = method.toUpperCase();
+  server.registerTool(
+    toolId,
+    {
+      description: toolDescription,
+      inputSchema: paramsSchema,
+    },
+    async (params) => {
+      try {
+        const originalParams: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(params)) {
+          const originalKey = keyMapping[key] || key;
+          originalParams[originalKey] = value;
+        }
+
+        const { actualPath, remainingParams } = processPathParameters(
+          path,
+          operation,
+          originalParams,
+        );
+        const { queryParams, bodyParams } = separateParameters(remainingParams, operation, method);
+        const finalPath = appendQueryString(actualPath, queryParams);
+
+        const result = await makeMailgunRequest(
+          httpMethod,
+          finalPath,
+          httpMethod === "GET" ? null : bodyParams,
+          contentType,
+        );
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `${httpMethod} ${finalPath} completed successfully:\n${JSON.stringify(result, null, 2)}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+        };
       }
-
-      const { actualPath, remainingParams } = processPathParameters(path, operation, originalParams);
-      const { queryParams, bodyParams } = separateParameters(remainingParams, operation, method);
-      const finalPath = appendQueryString(actualPath, queryParams);
-
-      const result = await makeMailgunRequest(
-        method.toUpperCase(),
-        finalPath,
-        method.toUpperCase() === "GET" ? null : bodyParams,
-        contentType
-      );
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `${method.toUpperCase()} ${finalPath} completed successfully:\n${JSON.stringify(result, null, 2)}`,
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text" as const,
-            text: `Error: ${(error as Error).message || String(error)}`,
-          },
-        ],
-      };
-    }
-  };
-
-  // Cast needed: dynamically-built schemas trigger TS2589 with the SDK's deep generics
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (server.tool as (...args: any[]) => void)(toolId, toolDescription, paramsSchema, handler);
+    },
+  );
 }
 
 export function processPathParameters(
   path: string,
   operation: OpenApiOperation,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
 ): PathParametersResult {
   let actualPath = path;
   const pathParams = operation.parameters?.filter((p) => p.in === "path") || [];
@@ -104,7 +122,7 @@ export function processPathParameters(
     if (param.name in params && params[param.name] !== undefined) {
       actualPath = actualPath.replace(
         `{${param.name}}`,
-        encodeURIComponent(String(params[param.name]))
+        encodeURIComponent(String(params[param.name])),
       );
       delete remainingParams[param.name];
     } else {
@@ -118,25 +136,24 @@ export function processPathParameters(
 export function separateParameters(
   params: Record<string, unknown>,
   operation: OpenApiOperation,
-  method: string
+  method: string,
 ): SeparatedParameters {
+  if (method.toUpperCase() === "GET") {
+    return { queryParams: { ...params }, bodyParams: {} };
+  }
+
   const queryParams: Record<string, unknown> = {};
   const bodyParams: Record<string, unknown> = {};
-
-  const definedQueryParams =
-    operation.parameters?.filter((p) => p.in === "query").map((p) => p.name) || [];
+  const definedQueryParams = new Set(
+    operation.parameters?.filter((p) => p.in === "query").map((p) => p.name),
+  );
 
   for (const [key, value] of Object.entries(params)) {
-    if (definedQueryParams.includes(key)) {
+    if (definedQueryParams.has(key)) {
       queryParams[key] = value;
     } else {
       bodyParams[key] = value;
     }
-  }
-
-  if (method.toUpperCase() === "GET") {
-    Object.assign(queryParams, bodyParams);
-    Object.keys(bodyParams).forEach((key) => delete bodyParams[key]);
   }
 
   return { queryParams, bodyParams };

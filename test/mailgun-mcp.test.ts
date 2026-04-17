@@ -17,35 +17,55 @@ import {
   sanitizePropertyKey,
 } from "../src/schema.js";
 import { endpoints } from "../src/endpoints.js";
-import type { OpenApiOperation, OpenApiParameter, OpenApiRequestBody, OpenApiSpec } from "../src/types.js";
+import type {
+  OpenApiOperation,
+  OpenApiParameter,
+  OpenApiRequestBody,
+  OpenApiSpec,
+} from "../src/types.js";
 
-/**
- * Internal type for Zod definitions
- */
-type ZodDefInternals = z.ZodTypeDef & {
+type ZodDefInternals = {
   typeName?: string;
-  values?: readonly string[];
+  values?: ReadonlyArray<string | number>;
   checks?: ReadonlyArray<{ kind: string; value?: number }>;
+  description?: string;
 };
 
-/**
- * Return the internal definition of a Zod schema
- * as an object with the following properties:
- * - typeName: The name of the Zod type (e.g. "ZodString", "ZodNumber", "ZodBoolean", "ZodArray", "ZodObject", "ZodRecord")
- * - values: The values of the Zod type (e.g. ["yes", "no", "maybe"] for a ZodEnum)
- * - checks: The checks of the Zod type (e.g. [{ kind: "min", value: 1 } for a ZodNumber)
- */
-function zodDef(schema: z.ZodTypeAny): ZodDefInternals {
-  return schema._def as ZodDefInternals;
+// Zod 4 renamed `_def.typeName` → `def.type` (lowercase, e.g. "string"), replaced enum
+// `values` with `entries`, reshaped check objects, and moved `description` off the def
+// onto the schema. Normalize back to the shape the assertions below expect.
+function zodDef(schema: z.ZodType): ZodDefInternals {
+  const typeName = schema.def.type
+    ? "Zod" + schema.def.type.charAt(0).toUpperCase() + schema.def.type.slice(1)
+    : undefined;
+
+  const values = schema instanceof z.ZodEnum ? Object.values(schema.def.entries) : undefined;
+
+  const checks = schema.def.checks?.map((c) => {
+    const cdef = c._zod.def;
+    let kind: string = cdef.check ?? "";
+    if (kind === "greater_than") kind = "min";
+    else if (kind === "less_than") kind = "max";
+    else if (kind === "string_format" && "format" in cdef && typeof cdef.format === "string") {
+      kind = cdef.format;
+    }
+    const value = "value" in cdef && typeof cdef.value === "number" ? cdef.value : undefined;
+    return { kind, value };
+  });
+
+  return { typeName, values, checks, description: schema.description };
 }
+
+// Zod 4 deprecated `.isOptional()`; the recommended replacement is probing with safeParse(undefined).
+const isOptional = (schema: z.ZodType): boolean => schema.safeParse(undefined).success;
 
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
-console.error = vi.fn();
-console.warn = vi.fn();
+console.error = vi.fn<typeof console.error>();
+console.warn = vi.fn<typeof console.warn>();
 
 const originalProcessExit = process.exit;
-process.exit = vi.fn() as never;
+process.exit = vi.fn<typeof process.exit>();
 
 describe("Mailgun MCP Server", () => {
   describe("processPathParameters()", () => {
@@ -301,24 +321,24 @@ describe("Mailgun MCP Server", () => {
       const params: OpenApiParameter[] = [
         { name: "domain", in: "path", required: true, schema: { type: "string" } },
       ];
-      const schema: Record<string, { isOptional(): boolean }> = {};
+      const schema: Record<string, z.ZodType> = {};
 
-      processParameters(params, schema as never, {});
+      processParameters(params, schema, {});
 
       expect(schema.domain).toBeDefined();
-      expect(schema.domain.isOptional()).toBe(false);
+      expect(isOptional(schema.domain)).toBe(false);
     });
 
     test("processes optional parameters", () => {
       const params: OpenApiParameter[] = [
         { name: "limit", in: "query", required: false, schema: { type: "number" } },
       ];
-      const schema: Record<string, { isOptional(): boolean }> = {};
+      const schema: Record<string, z.ZodType> = {};
 
-      processParameters(params, schema as never, {});
+      processParameters(params, schema, {});
 
       expect(schema.limit).toBeDefined();
-      expect(schema.limit.isOptional()).toBe(true);
+      expect(isOptional(schema.limit)).toBe(true);
     });
 
     test("processes multiple parameters", () => {
@@ -344,11 +364,11 @@ describe("Mailgun MCP Server", () => {
           schema: { type: "integer" },
         },
       ];
-      const schema: Record<string, { _def: { description?: string } }> = {};
+      const schema: Record<string, z.ZodType> = {};
 
-      processParameters(params, schema as never, {});
+      processParameters(params, schema, {});
 
-      expect(schema.limit._def.description).toBe("Max count of items");
+      expect(schema.limit.description).toBe("Max count of items");
     });
 
     test("preserves schema-level description over parameter-level description", () => {
@@ -361,11 +381,11 @@ describe("Mailgun MCP Server", () => {
           schema: { type: "integer", description: "Schema-level desc" },
         },
       ];
-      const schema: Record<string, { _def: { description?: string } }> = {};
+      const schema: Record<string, z.ZodType> = {};
 
-      processParameters(params, schema as never, {});
+      processParameters(params, schema, {});
 
-      expect(schema.limit._def.description).toBe("Schema-level desc");
+      expect(schema.limit.description).toBe("Schema-level desc");
     });
   });
 
@@ -395,9 +415,9 @@ describe("Mailgun MCP Server", () => {
       const { paramsSchema } = buildParamsSchema(operation, {});
 
       expect(paramsSchema.domain_name).toBeDefined();
-      expect(paramsSchema.domain_name.isOptional()).toBe(false);
+      expect(isOptional(paramsSchema.domain_name)).toBe(false);
       expect(paramsSchema.limit).toBeDefined();
-      expect(paramsSchema.limit.isOptional()).toBe(true);
+      expect(isOptional(paramsSchema.limit)).toBe(true);
     });
 
     test("builds schema including request body properties", () => {
@@ -424,9 +444,9 @@ describe("Mailgun MCP Server", () => {
 
       expect(paramsSchema.domain_name).toBeDefined();
       expect(paramsSchema.to).toBeDefined();
-      expect(paramsSchema.to.isOptional()).toBe(false);
+      expect(isOptional(paramsSchema.to)).toBe(false);
       expect(paramsSchema.subject).toBeDefined();
-      expect(paramsSchema.subject.isOptional()).toBe(true);
+      expect(isOptional(paramsSchema.subject)).toBe(true);
     });
 
     test("handles operation with no parameters", () => {
@@ -501,14 +521,14 @@ describe("Mailgun MCP Server", () => {
           },
         },
       };
-      const schema: Record<string, { isOptional(): boolean }> = {};
+      const schema: Record<string, z.ZodType> = {};
 
-      processRequestBody(requestBody, schema as never, {});
+      processRequestBody(requestBody, schema, {});
 
       expect(schema.name).toBeDefined();
-      expect(schema.name.isOptional()).toBe(false);
+      expect(isOptional(schema.name)).toBe(false);
       expect(schema.count).toBeDefined();
-      expect(schema.count.isOptional()).toBe(true);
+      expect(isOptional(schema.count)).toBe(true);
     });
 
     test("processes form-urlencoded request body", () => {
@@ -553,12 +573,12 @@ describe("Mailgun MCP Server", () => {
           },
         },
       };
-      const schema: Record<string, { isOptional(): boolean }> = {};
+      const schema: Record<string, z.ZodType> = {};
 
-      processRequestBody(requestBody, schema as never, spec);
+      processRequestBody(requestBody, schema, spec);
 
       expect(schema.to).toBeDefined();
-      expect(schema.to.isOptional()).toBe(false);
+      expect(isOptional(schema.to)).toBe(false);
     });
 
     test("resolves $ref in body properties", () => {
@@ -599,7 +619,7 @@ describe("Mailgun MCP Server", () => {
     test("throws error for non-existent file", () => {
       expect(() => {
         loadOpenApiSpec("/nonexistent/path/openapi.yaml");
-      }).toThrow();
+      }).toThrow(/ENOENT|no such file/i);
     });
   });
 
@@ -607,7 +627,7 @@ describe("Mailgun MCP Server", () => {
     test("warns for endpoints not found in spec", () => {
       (console.warn as ReturnType<typeof vi.fn>).mockClear();
 
-      generateToolsFromOpenApi({ paths: {} }, { tool: vi.fn() } as never);
+      generateToolsFromOpenApi({ paths: {} }, { tool: vi.fn<() => void>() } as never);
 
       expect(console.warn).toHaveBeenCalled();
     });
@@ -624,7 +644,7 @@ describe("Mailgun MCP Server", () => {
         },
       };
 
-      expect(() => generateToolsFromOpenApi(spec, { tool: vi.fn() } as never)).not.toThrow();
+      expect(() => generateToolsFromOpenApi(spec, { tool: vi.fn<() => void>() } as never)).not.toThrow();
     });
   });
 
@@ -649,8 +669,8 @@ describe("openapiToZod()", () => {
 
   test("converts string with email format", () => {
     const result = openapiToZod({ type: "string", format: "email" }, {});
-    expect(zodDef(result).typeName).toBe("ZodString");
-    expect(zodDef(result).checks!.some((c: { kind: string }) => c.kind === "email")).toBe(true);
+    expect(result.safeParse("user@example.com").success).toBe(true);
+    expect(result.safeParse("not-an-email").success).toBe(false);
   });
 
   test("converts string with uri format", () => {
@@ -669,7 +689,7 @@ describe("openapiToZod()", () => {
   test("converts enum schema with description", () => {
     const result = openapiToZod(
       { type: "string", enum: ["yes", "no"], description: "Enable tracking" },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodEnum");
     expect(zodDef(result).values).toEqual(["yes", "no"]);
@@ -684,14 +704,18 @@ describe("openapiToZod()", () => {
         maximum: 100,
         description: "A constrained number",
       },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodNumber");
     expect(
-      zodDef(result).checks!.some((c: { kind: string; value?: number }) => c.kind === "min" && c.value === 1)
+      zodDef(result).checks!.some(
+        (c: { kind: string; value?: number }) => c.kind === "min" && c.value === 1,
+      ),
     ).toBe(true);
     expect(
-      zodDef(result).checks!.some((c: { kind: string; value?: number }) => c.kind === "max" && c.value === 100)
+      zodDef(result).checks!.some(
+        (c: { kind: string; value?: number }) => c.kind === "max" && c.value === 100,
+      ),
     ).toBe(true);
   });
 
@@ -712,7 +736,7 @@ describe("openapiToZod()", () => {
         items: { type: "string" },
         description: "A list",
       },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodArray");
   });
@@ -728,7 +752,7 @@ describe("openapiToZod()", () => {
         required: ["name"],
         description: "A person",
       },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodObject");
   });
@@ -746,7 +770,7 @@ describe("openapiToZod()", () => {
         },
         required: ["name"],
       },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodObject");
   });
@@ -756,7 +780,7 @@ describe("openapiToZod()", () => {
       {
         oneOf: [{ type: "string" }, { type: "number" }],
       },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodUnion");
   });
@@ -766,7 +790,7 @@ describe("openapiToZod()", () => {
       {
         anyOf: [{ type: "string" }, { type: "boolean" }],
       },
-      {}
+      {},
     );
     expect(zodDef(result).typeName).toBe("ZodUnion");
   });
@@ -787,7 +811,7 @@ describe("openapiToZod()", () => {
   test("handles unresolvable $ref with fallback", () => {
     const result = openapiToZod(
       { $ref: "#/components/schemas/Missing" },
-      { components: { schemas: {} } }
+      { components: { schemas: {} } },
     );
     expect(zodDef(result).typeName).toBe("ZodAny");
   });
@@ -795,7 +819,7 @@ describe("openapiToZod()", () => {
   test("handles EventSeverityType $ref fallback", () => {
     const result = openapiToZod(
       { $ref: "#/components/schemas/EventSeverityType" },
-      { components: { schemas: {} } }
+      { components: { schemas: {} } },
     );
     expect(zodDef(result).typeName).toBe("ZodEnum");
     expect(zodDef(result).values).toEqual(["temporary", "permanent"]);
@@ -854,9 +878,7 @@ describe("getOperationDetails()", () => {
 });
 
 describe("endpoint validation against OpenAPI spec", () => {
-  const openApiSpec = loadOpenApiSpec(
-    new URL("../src/openapi.yaml", import.meta.url).pathname
-  );
+  const openApiSpec = loadOpenApiSpec(new URL("../src/openapi.yaml", import.meta.url).pathname);
 
   test("every endpoint matches a path and method in the OpenAPI spec", () => {
     const missing: string[] = [];
@@ -967,9 +989,7 @@ describe("sanitizePropertyKey()", () => {
 });
 
 describe("schema property key validation against Anthropic API pattern", () => {
-  const openApiSpec = loadOpenApiSpec(
-    new URL("../src/openapi.yaml", import.meta.url).pathname
-  );
+  const openApiSpec = loadOpenApiSpec(new URL("../src/openapi.yaml", import.meta.url).pathname);
   const KEY_PATTERN = /^[a-zA-Z0-9_.-]{1,64}$/;
 
   test("all generated tool schemas have property keys matching the API pattern", () => {

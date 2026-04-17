@@ -1,12 +1,8 @@
 import { z } from "zod";
 import fs from "node:fs";
 import yaml from "js-yaml";
-import type {
-  OpenApiSchema,
-  OpenApiSpec,
-  OpenApiOperation,
-  OperationDetails,
-} from "./types.js";
+import type { OpenApiSchema, OpenApiSpec, OpenApiOperation, OperationDetails } from "./types.js";
+import { toOptional } from "./zod-utils.js";
 
 export function loadOpenApiSpec(filePath: string): OpenApiSpec {
   try {
@@ -21,18 +17,27 @@ export function loadOpenApiSpec(filePath: string): OpenApiSpec {
   }
 }
 
-export function openapiToZod(schema: OpenApiSchema | null | undefined, fullSpec: OpenApiSpec): z.ZodTypeAny {
+export function openapiToZod(
+  schema: OpenApiSchema | null | undefined,
+  fullSpec: OpenApiSpec,
+): z.ZodTypeAny {
   if (!schema) return z.any();
   if (schema.$ref) return resolveSchemaRef(schema.$ref, fullSpec);
 
   switch (schema.type) {
-    case "string":   return convertStringSchema(schema);
+    case "string":
+      return convertStringSchema(schema);
     case "number":
-    case "integer":  return convertNumberSchema(schema);
-    case "boolean":  return z.boolean().describe(schema.description || "");
-    case "array":    return z.array(openapiToZod(schema.items, fullSpec)).describe(schema.description || "");
-    case "object":   return convertObjectSchema(schema, fullSpec);
-    default:         return convertUntypedSchema(schema, fullSpec);
+    case "integer":
+      return convertNumberSchema(schema);
+    case "boolean":
+      return z.boolean().describe(schema.description || "");
+    case "array":
+      return z.array(openapiToZod(schema.items, fullSpec)).describe(schema.description || "");
+    case "object":
+      return convertObjectSchema(schema, fullSpec);
+    default:
+      return convertUntypedSchema(schema, fullSpec);
   }
 }
 
@@ -69,17 +74,13 @@ function convertStringSchema(schema: OpenApiSchema): z.ZodType {
   if (schema.enum) {
     return z.enum(schema.enum).describe(schema.description || "");
   }
-
-  let zodString = z.string();
   if (schema.format === "email") {
-    zodString = zodString.email();
+    return z.email().describe(schema.description || "");
   }
-  // Early return preserves the "URI: " prefix; Zod's .describe() is immutable
-  // so a subsequent .describe() call would overwrite it.
   if (schema.format === "uri") {
-    return zodString.describe(`URI: ${schema.description || ""}`);
+    return z.string().describe(`URI: ${schema.description || ""}`);
   }
-  return zodString.describe(schema.description || "");
+  return z.string().describe(schema.description || "");
 }
 
 function convertNumberSchema(schema: OpenApiSchema): z.ZodType {
@@ -93,21 +94,17 @@ function convertNumberSchema(schema: OpenApiSchema): z.ZodType {
   return zodNumber.describe(schema.description || "");
 }
 
-function buildObjectShape(
-  schema: OpenApiSchema,
-  fullSpec: OpenApiSpec
-): Record<string, z.ZodType> {
+function buildObjectShape(schema: OpenApiSchema, fullSpec: OpenApiSpec): Record<string, z.ZodType> {
   const shape: Record<string, z.ZodType> = {};
   for (const [key, prop] of Object.entries(schema.properties!)) {
-    shape[key] = schema.required?.includes(key)
-      ? openapiToZod(prop, fullSpec)
-      : openapiToZod(prop, fullSpec).optional();
+    const inner = openapiToZod(prop, fullSpec);
+    shape[key] = schema.required?.includes(key) ? inner : toOptional(inner);
   }
   return shape;
 }
 
 function convertObjectSchema(schema: OpenApiSchema, fullSpec: OpenApiSpec): z.ZodType {
-  if (!schema.properties) return z.record(z.any());
+  if (!schema.properties) return z.record(z.string(), z.any());
   return z.object(buildObjectShape(schema, fullSpec)).describe(schema.description || "");
 }
 
@@ -121,7 +118,9 @@ function convertUntypedSchema(schema: OpenApiSchema, fullSpec: OpenApiSpec): z.Z
   const variants = schema.oneOf ?? schema.anyOf;
   if (variants) {
     const unionTypes = variants.map((s) => openapiToZod(s, fullSpec));
-    return z.union(unionTypes as [z.ZodType, z.ZodType, ...z.ZodType[]]).describe(schema.description || "");
+    return z
+      .union(unionTypes as [z.ZodType, z.ZodType, ...z.ZodType[]])
+      .describe(schema.description || "");
   }
 
   return z.any().describe(schema.description || "");
@@ -131,14 +130,14 @@ export function resolveReference(ref: string, openApiSpec: OpenApiSpec): OpenApi
   const refPath = ref.replace("#/", "").split("/");
   return refPath.reduce<unknown>(
     (obj, segment) => (obj as Record<string, unknown>)[segment],
-    openApiSpec
+    openApiSpec,
   ) as OpenApiSchema;
 }
 
 export function getOperationDetails(
   openApiSpec: OpenApiSpec,
   method: string,
-  path: string
+  path: string,
 ): OperationDetails | null {
   const lowerMethod = method.toLowerCase();
 

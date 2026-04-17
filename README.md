@@ -1,7 +1,9 @@
 # Mailgun MCP Server
+
 [![MCP](https://img.shields.io/badge/MCP-Server-blue.svg)](https://github.com/modelcontextprotocol)
 
 ## Overview
+
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Mailgun](https://mailgun.com), enabling MCP-compatible AI clients to interact with the Mailgun email service.
 
 > **Note:** This MCP server runs locally on your machine. Mailgun does not currently offer a hosted version of this server.
@@ -48,10 +50,10 @@ Add the following to your MCP client configuration:
 
 #### Environment Variables
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `MAILGUN_API_KEY` | Yes | — | Your Mailgun API key |
-| `MAILGUN_API_REGION` | No | `us` | API region: `us` or `eu` |
+| Variable             | Required | Default | Description              |
+| -------------------- | -------- | ------- | ------------------------ |
+| `MAILGUN_API_KEY`    | Yes      | —       | Your Mailgun API key     |
+| `MAILGUN_API_REGION` | No       | `us`    | API region: `us` or `eu` |
 
 #### Client-Specific Config Paths
 
@@ -62,6 +64,7 @@ Add the following to your MCP client configuration:
 ## Sample Prompts
 
 #### Send an Email
+
 ```
 Can you send an email to EMAIL_HERE with a funny email body that makes it sound
 like it's from the IT Desk from Office Space? Please use the sending domain
@@ -71,57 +74,67 @@ DOMAIN_HERE, and make the email from "postmaster@DOMAIN_HERE"!
 > Note: some MCP clients require a paid plan to invoke tools that send data. If sending fails silently, check your client's plan.
 
 #### Fetch and Visualize Sending Statistics
+
 ```
 Would you be able to make a chart with email delivery statistics for the past week?
 ```
 
 #### Manage Templates
+
 ```
 Create a welcome email template for new signups on my domain DOMAIN_HERE.
 Include a personalized greeting and a call-to-action button.
 ```
 
 #### Investigate Deliverability
+
 ```
 Can you check the bounce classification stats for my account and tell me
 what the most common bounce reasons are?
 ```
 
 #### Troubleshoot DNS
+
 ```
 Check the DNS verification status for my domain DOMAIN_HERE and tell me
 if anything needs fixing.
 ```
 
 #### Review Suppressions
+
 ```
 Are there any unsubscribes or complaints for DOMAIN_HERE? Summarize the
 top offenders.
 ```
 
 #### Manage Routing Rules
+
 ```
 List all my inbound routes and explain what each one does.
 ```
 
 #### Create a Mailing List
+
 ```
 Create a mailing list called announcements@DOMAIN_HERE and add these
 members: alice@example.com, bob@example.com.
 ```
 
 #### Compare Domains
+
 ```
 Compare my sending volume and delivery rates across all my domains for
 the past month.
 ```
 
 #### Engagement by Region
+
 ```
 Break down my email engagement by country and device for DOMAIN_HERE.
 ```
 
 #### Review Tracking Settings
+
 ```
 List all my domains and show which ones have tracking enabled for clicks
 and opens.
