@@ -245,7 +245,14 @@ describe("Mailgun MCP Server", () => {
     });
 
     test("preserves hyphens and underscores", () => {
-      expect(sanitizeToolId("get-v3-domain_name")).toBe("get-v3-domain_name");
+      expect(sanitizeToolId("get-v3-domain_tag")).toBe("get-v3-domain_tag");
+    });
+
+    test("strips _name suffixes from path parameter segments", () => {
+      expect(sanitizeToolId("get-v3-domain_name")).toBe("get-v3-domain");
+      expect(sanitizeToolId("get-v3-domain_name-templates-template_name")).toBe(
+        "get-v3-domain-templates-template",
+      );
     });
 
     test("strips leading and trailing dashes", () => {
@@ -890,18 +897,19 @@ describe("endpoint validation against OpenAPI spec", () => {
     expect(missing).toEqual([]);
   });
 
-  test("every endpoint produces a tool ID within the 64 character limit (no truncation)", () => {
+  test("every endpoint produces a tool ID within the 53 character limit (no truncation)", () => {
     const truncated: { endpoint: string; toolId: string; length: number }[] = [];
     for (const endpoint of endpoints) {
       const [method, path] = endpoint.split(" ");
       const operationId = `${method}-${path}`;
       const fullId = operationId
         .replace(/[^\w-]/g, "-")
+        .replace(/_name(?=-|$)/g, "")
         .replace(/-+/g, "-")
         .replace(/^-+|-+$/g, "")
         .toLowerCase();
       const toolId = sanitizeToolId(operationId);
-      if (fullId.length > 64) {
+      if (fullId.length > 53) {
         truncated.push({ endpoint, toolId, length: fullId.length });
       }
     }

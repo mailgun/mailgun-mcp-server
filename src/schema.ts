@@ -17,10 +17,11 @@ export function sanitizePropertyKey(key: string): string {
 export function sanitizeToolId(operationId: string): string {
   return operationId
     .replace(/[^\w-]/g, "-")
+    .replace(/_name(?=-|$)/g, "")
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "")
     .toLowerCase()
-    .slice(0, 64);
+    .slice(0, 53);
 }
 
 export function buildParamsSchema(
