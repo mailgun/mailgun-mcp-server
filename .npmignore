@@ -1,7 +1,10 @@
+# Source (publish only compiled dist/)
+src/
+tsconfig.json
+
 # Tests and config
 test/
 coverage/
-jest.config.mjs
 eslint.config.js
 .github/
 
