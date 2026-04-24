@@ -1,7 +1,8 @@
 {
   "name": "@mailgun/mcp-server",
+  "mcpName": "com.mailgun/mailgun-mcp-server",
   "version": "1.1.0",
-  "description": "A Model Context Protocol (MCP) server for Mailgun, enabling MCP-compatible AI clients to interact with the Mailgun email service.",
+  "description": "An MCP server that gives AI agents a practical interface to Mailgun workflows for sending, diagnosing deliverability, and taking account actions safely.",
   "keywords": [
     "ai",
     "email",

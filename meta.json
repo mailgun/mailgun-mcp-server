@@ -1,0 +1,27 @@
+{
+  "name": "Mailgun MCP Server",
+  "description": "A workflow-oriented Mailgun MCP server that helps AI agents send messages, diagnose deliverability, and execute account operations with practical context.",
+  "author": {
+    "name": "Mailgun Technologies, Inc."
+  },
+  "tags": ["mailgun", "email", "mcp", "analytics", "deliverability", "stdio"],
+  "repository": "https://github.com/mailgun/mailgun-mcp-server",
+  "license": "Apache-2.0",
+  "runtime": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["-y", "@mailgun/mcp-server"]
+  },
+  "env": [
+    {
+      "name": "MAILGUN_API_KEY",
+      "required": true,
+      "description": "Mailgun API key"
+    },
+    {
+      "name": "MAILGUN_API_REGION",
+      "required": false,
+      "description": "Mailgun API region: us or eu"
+    }
+  ]
+}
