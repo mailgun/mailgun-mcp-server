@@ -1,0 +1,25 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.mailgun/mailgun-mcp-server",
+  "title": "Mailgun MCP Server",
+  "description": "Give AI agents a workflow-oriented Mailgun interface to send email, investigate deliverability, and manage account operations with focused, actionable tools.",
+  "version": "2.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@mailgun/mcp-server",
+      "version": "2.0.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ],
+  "runtime": {
+    "command": "npx",
+    "args": ["-y", "@mailgun/mcp-server"],
+    "env": ["MAILGUN_API_KEY", "MAILGUN_API_REGION"]
+  },
+  "meta": {
+    "publisher": "Mailgun Technologies, Inc."
+  }
+}
