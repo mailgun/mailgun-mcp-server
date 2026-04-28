@@ -29,9 +29,10 @@
   "types": "dist/mailgun-mcp.d.ts",
   "scripts": {
     "build": "tsc && cp src/openapi.yaml dist/openapi.yaml",
+    "check:versions": "node scripts/check-version-sync.mjs",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "lint": "oxlint",
+    "lint": "npm run check:versions && oxlint",
     "lint:fix": "oxlint --fix",
     "prepublishOnly": "npm run build",
     "start": "node dist/mailgun-mcp.js",
