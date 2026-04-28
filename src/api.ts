@@ -1,6 +1,17 @@
 import https from "node:https";
 import { MAILGUN_API_KEY, MAILGUN_API_HOSTNAME } from "./config.js";
 
+export class MailgunApiError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: number,
+    public readonly apiMessage?: string,
+  ) {
+    super(message);
+    this.name = "MailgunApiError";
+  }
+}
+
 export async function makeMailgunRequest(
   method: string,
   requestPath: string,
@@ -34,10 +45,16 @@ export async function makeMailgunRequest(
           if (res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300) {
             resolve(parsedData);
           } else {
-            reject(new Error(`Mailgun API error: ${parsedData.message || responseData}`));
+            const apiMsg = parsedData.message || parsedData.Reason || responseData;
+            reject(new MailgunApiError(apiMsg, res.statusCode ?? 0, apiMsg));
           }
         } catch (e) {
-          reject(new Error(`Failed to parse response: ${(e as Error).message}`));
+          reject(
+            new MailgunApiError(
+              `Failed to parse response: ${(e as Error).message}`,
+              res.statusCode ?? 0,
+            ),
+          );
         }
       });
     });
