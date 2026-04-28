@@ -102,4 +102,13 @@ export const endpoints = [
 
   // Account Limits
   "GET /v5/accounts/limit/custom/monthly",
+
+  // Validation
+  "GET /v4/address/validate",
+
+  // Inbox Placement (Optimize)
+  "GET /v4/inbox/results/{result}",
+
+  // Email Preview (Inspect)
+  "GET /v1/preview/tests/{test_id}/results",
 ] as const;
