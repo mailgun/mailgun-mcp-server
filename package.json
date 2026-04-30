@@ -1,7 +1,8 @@
 {
   "name": "@mailgun/mcp-server",
+  "mcpName": "com.mailgun/mailgun-mcp-server",
   "version": "2.0.0",
-  "description": "A Model Context Protocol (MCP) server for Mailgun, enabling MCP-compatible AI clients to interact with the Mailgun email service.",
+  "description": "An MCP server that gives AI agents a practical interface to Mailgun workflows for sending, diagnosing deliverability, and taking account actions safely.",
   "keywords": [
     "ai",
     "email",
@@ -28,9 +29,10 @@
   "types": "dist/mailgun-mcp.d.ts",
   "scripts": {
     "build": "tsc && cp src/openapi.yaml dist/openapi.yaml",
+    "check:versions": "node scripts/check-version-sync.mjs",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "lint": "oxlint",
+    "lint": "npm run check:versions && oxlint",
     "lint:fix": "oxlint --fix",
     "prepublishOnly": "npm run build",
     "start": "node dist/mailgun-mcp.js",
