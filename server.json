@@ -1,0 +1,43 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.mailgun/mailgun-mcp-server",
+  "title": "Mailgun MCP Server",
+  "description": "An MCP server for sending email, investigating deliverability, and managing Mailgun accounts.",
+  "version": "2.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@mailgun/mcp-server",
+      "version": "2.0.0",
+      "runtimeHint": "npx",
+      "runtimeArguments": [
+        {
+          "type": "positional",
+          "value": "-y"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "MAILGUN_API_KEY",
+          "description": "Mailgun API key from https://app.mailgun.com/settings/api_security",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "MAILGUN_API_REGION",
+          "description": "API region: us or eu",
+          "isRequired": false,
+          "default": "us"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/mailgun/mailgun-mcp-server",
+    "source": "github"
+  },
+  "websiteUrl": "https://www.mailgun.com"
+}

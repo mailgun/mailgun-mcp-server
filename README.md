@@ -4,7 +4,7 @@
 
 ## Overview
 
-A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Mailgun](https://mailgun.com), enabling MCP-compatible AI clients to interact with the Mailgun email service.
+A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Mailgun](https://mailgun.com) that gives AI agents a practical, workflow-oriented interface to send email, diagnose deliverability, and manage account operations.
 
 > **Note:** This MCP server runs locally on your machine. Mailgun does not currently offer a hosted version of this server.
 
