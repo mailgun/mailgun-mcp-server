@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { MAILGUN_API_KEY, OPENAPI_YAML } from "./config.js";
 import { loadOpenApiSpec } from "./openapi.js";
 import { generateToolsFromOpenApi } from "./tools.js";
+import { registerCustomTools } from "./custom-tools/index.js";
 
 export const server = new McpServer({
   name: "mailgun",
@@ -23,6 +24,7 @@ export async function main(): Promise<void> {
     const openApiSpec = loadOpenApiSpec(OPENAPI_YAML);
 
     generateToolsFromOpenApi(openApiSpec, server);
+    registerCustomTools(server);
 
     const transport = new StdioServerTransport();
     await server.connect(transport);
