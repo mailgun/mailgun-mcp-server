@@ -6,7 +6,7 @@ import type {
   PathParametersResult,
   SeparatedParameters,
 } from "./types.js";
-import { endpoints } from "./endpoints.js";
+import { endpoints, parseEndpointEntry } from "./endpoints.js";
 import { makeMailgunRequest, MailgunApiError } from "./api.js";
 import { getOperationDetails, getRequestContentType } from "./openapi.js";
 import { buildParamsSchema, sanitizeToolId } from "./schema.js";
@@ -18,10 +18,12 @@ export const HttpStatus = {
   NOT_FOUND: 404,
 } as const;
 
+const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,53}$/;
+
 export function generateToolsFromOpenApi(openApiSpec: OpenApiSpec, server: McpServer): void {
-  for (const endpoint of endpoints) {
+  for (const entry of endpoints) {
     try {
-      const [method, path] = endpoint.split(" ");
+      const { method, path, toolNameOverride } = parseEndpointEntry(entry);
       const operationDetails = getOperationDetails(openApiSpec, method, path);
 
       if (!operationDetails) {
@@ -29,9 +31,15 @@ export function generateToolsFromOpenApi(openApiSpec: OpenApiSpec, server: McpSe
         continue;
       }
 
+      if (toolNameOverride !== undefined && !TOOL_ID_PATTERN.test(toolNameOverride)) {
+        throw new Error(
+          `Invalid toolName override "${toolNameOverride}" for ${method} ${path}: must match ${TOOL_ID_PATTERN}`,
+        );
+      }
+
       const { operation, operationId } = operationDetails;
       const { paramsSchema, keyMapping } = buildParamsSchema(operation, openApiSpec);
-      const toolId = sanitizeToolId(operationId);
+      const toolId = toolNameOverride ?? sanitizeToolId(operationId);
       const toolDescription = operation.summary || `${method.toUpperCase()} ${path}`;
       const contentType = getRequestContentType(operation);
 
@@ -47,7 +55,8 @@ export function generateToolsFromOpenApi(openApiSpec: OpenApiSpec, server: McpSe
         keyMapping,
       );
     } catch (error) {
-      console.error(`Failed to process endpoint ${endpoint}: ${(error as Error).message}`);
+      const label = typeof entry === "string" ? entry : entry.endpoint;
+      console.error(`Failed to process endpoint ${label}: ${(error as Error).message}`);
     }
   }
 }

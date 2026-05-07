@@ -1,4 +1,19 @@
-export const endpoints = [
+export type EndpointEntry = string | { endpoint: string; toolName: string };
+
+export interface ParsedEndpointEntry {
+  method: string;
+  path: string;
+  toolNameOverride?: string;
+}
+
+export function parseEndpointEntry(entry: EndpointEntry): ParsedEndpointEntry {
+  const endpoint = typeof entry === "string" ? entry : entry.endpoint;
+  const [method, path] = endpoint.split(" ");
+  const toolNameOverride = typeof entry === "string" ? undefined : entry.toolName;
+  return { method, path, toolNameOverride };
+}
+
+export const endpoints: readonly EndpointEntry[] = [
   // Messages
   "POST /v3/{domain_name}/messages",
   "GET /v3/domains/{domain_name}/messages/{storage_key}",
@@ -104,11 +119,11 @@ export const endpoints = [
   "GET /v5/accounts/limit/custom/monthly",
 
   // Validation
-  "GET /v4/address/validate",
+  { endpoint: "GET /v4/address/validate", toolName: "validate_email" },
 
   // Inbox Placement (Optimize)
-  "GET /v4/inbox/results/{result}",
+  { endpoint: "GET /v4/inbox/results/{result}", toolName: "get_inbox_placement_result" },
 
   // Email Preview (Inspect)
-  "GET /v1/preview/tests/{test_id}/results",
+  { endpoint: "GET /v1/preview/tests/{test_id}/results", toolName: "get_preview_result" },
 ] as const;
