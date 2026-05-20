@@ -1,16 +1,31 @@
-export type EndpointEntry = string | { endpoint: string; toolName: string };
+import type { Tag } from "./tags.js";
+
+export type EndpointEntry = string | { endpoint: string; toolName?: string; tags?: readonly Tag[] };
 
 export interface ParsedEndpointEntry {
   method: string;
   path: string;
   toolNameOverride?: string;
+  // Always non-empty. Defaults to ["send"] when an entry omits an explicit `tags`
+  // Promote an entry to the object form to override.
+  tags: readonly Tag[];
 }
 
+const DEFAULT_TAGS: readonly Tag[] = ["send"];
+
 export function parseEndpointEntry(entry: EndpointEntry): ParsedEndpointEntry {
-  const endpoint = typeof entry === "string" ? entry : entry.endpoint;
-  const [method, path] = endpoint.split(" ");
-  const toolNameOverride = typeof entry === "string" ? undefined : entry.toolName;
-  return { method, path, toolNameOverride };
+  if (typeof entry === "string") {
+    const [method, path] = entry.split(" ");
+    return { method, path, tags: DEFAULT_TAGS };
+  }
+
+  const [method, path] = entry.endpoint.split(" ");
+  return {
+    method,
+    path,
+    toolNameOverride: entry.toolName,
+    tags: entry.tags && entry.tags.length > 0 ? entry.tags : DEFAULT_TAGS,
+  };
 }
 
 export const endpoints: readonly EndpointEntry[] = [
@@ -119,11 +134,19 @@ export const endpoints: readonly EndpointEntry[] = [
   "GET /v5/accounts/limit/custom/monthly",
 
   // Validation
-  { endpoint: "GET /v4/address/validate", toolName: "validate_email" },
+  { endpoint: "GET /v4/address/validate", toolName: "validate_email", tags: ["validate"] },
 
   // Inbox Placement (Optimize)
-  { endpoint: "GET /v4/inbox/results/{result}", toolName: "get_inbox_placement_result" },
+  {
+    endpoint: "GET /v4/inbox/results/{result}",
+    toolName: "get_inbox_placement_result",
+    tags: ["optimize"],
+  },
 
   // Email Preview (Inspect)
-  { endpoint: "GET /v1/preview/tests/{test_id}/results", toolName: "get_preview_result" },
+  {
+    endpoint: "GET /v1/preview/tests/{test_id}/results",
+    toolName: "get_preview_result",
+    tags: ["inspect"],
+  },
 ] as const;
