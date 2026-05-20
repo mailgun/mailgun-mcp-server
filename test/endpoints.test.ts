@@ -3,6 +3,7 @@ import { z } from "zod";
 import { loadOpenApiSpec, getOperationDetails, getRequestContentType } from "../src/openapi.js";
 import { buildParamsSchema, sanitizeToolId } from "../src/schema.js";
 import { endpoints, parseEndpointEntry } from "../src/endpoints.js";
+import { isKnownTag } from "../src/tags.js";
 
 const isOptional = (schema: z.ZodType): boolean => schema.safeParse(undefined).success;
 
@@ -94,6 +95,37 @@ describe("endpoint validation against OpenAPI spec", () => {
     expect(byEndpoint.get("GET /v4/address/validate")).toBe("validate_email");
     expect(byEndpoint.get("GET /v4/inbox/results/{result}")).toBe("get_inbox_placement_result");
     expect(byEndpoint.get("GET /v1/preview/tests/{test_id}/results")).toBe("get_preview_result");
+  });
+
+  test("validate / inbox / preview entries declare their explicit tags", () => {
+    const tagsByEndpoint = new Map<string, readonly string[]>();
+    for (const entry of endpoints) {
+      const { method, path, tags } = parseEndpointEntry(entry);
+      tagsByEndpoint.set(`${method} ${path}`, tags);
+    }
+    expect(tagsByEndpoint.get("GET /v4/address/validate")).toEqual(["validate"]);
+    expect(tagsByEndpoint.get("GET /v4/inbox/results/{result}")).toEqual(["optimize"]);
+    expect(tagsByEndpoint.get("GET /v1/preview/tests/{test_id}/results")).toEqual(["inspect"]);
+  });
+
+  test("every endpoint resolves to at least one known tag", () => {
+    const violations: { endpoint: string; tags: readonly string[] }[] = [];
+    for (const entry of endpoints) {
+      const { tags } = parseEndpointEntry(entry);
+      if (tags.length === 0 || !tags.every((t) => isKnownTag(t))) {
+        violations.push({ endpoint: endpointLabel(entry), tags });
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  test("untagged string entries default to ['send']", () => {
+    const sendOnly = endpoints.filter((entry) => typeof entry === "string");
+    expect(sendOnly.length).toBeGreaterThan(0);
+    for (const entry of sendOnly) {
+      const { tags } = parseEndpointEntry(entry);
+      expect(tags).toEqual(["send"]);
+    }
   });
 });
 

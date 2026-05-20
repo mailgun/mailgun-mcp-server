@@ -1,8 +1,10 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, vi } from "vitest";
 import {
   buildMetricsRequestBody,
   buildMetricsSummaryOutput,
+  register,
 } from "../../src/custom-tools/get-metrics-summary.js";
+import { registerCustomTools } from "../../src/custom-tools/index.js";
 
 describe("buildMetricsRequestBody()", () => {
   test("includes domain filter and default duration when no window provided", () => {
@@ -233,5 +235,47 @@ describe("buildMetricsRequestBody() window guardrails", () => {
     expect(body.duration).toBe("24h");
     expect(body.start).toBeUndefined();
     expect(body.end).toBeUndefined();
+  });
+});
+
+describe("register()", () => {
+  test('attaches _meta["com.mailgun/tags"] from the supplied tags', () => {
+    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
+    register({ registerTool: mockRegisterTool } as never, ["send"]);
+
+    expect(mockRegisterTool).toHaveBeenCalled();
+    const config = mockRegisterTool.mock.calls[0][1] as {
+      _meta?: Record<string, unknown>;
+    };
+    expect(config._meta).toEqual({ "com.mailgun/tags": ["send"] });
+  });
+});
+
+describe("registerCustomTools()", () => {
+  test('default activeTags="all" registers get_metrics_summary', () => {
+    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
+    registerCustomTools({ registerTool: mockRegisterTool } as never);
+
+    const names = mockRegisterTool.mock.calls.map((c) => c[0]);
+    expect(names).toContain("get_metrics_summary");
+  });
+
+  test("disjoint activeTags skips registering get_metrics_summary", () => {
+    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
+    registerCustomTools({ registerTool: mockRegisterTool } as never, new Set(["validate"]));
+
+    expect(mockRegisterTool).not.toHaveBeenCalled();
+  });
+
+  test("intersecting activeTags registers get_metrics_summary with _meta", () => {
+    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
+    registerCustomTools({ registerTool: mockRegisterTool } as never, new Set(["send"]));
+
+    expect(mockRegisterTool).toHaveBeenCalledTimes(1);
+    expect(mockRegisterTool.mock.calls[0][0]).toBe("get_metrics_summary");
+    const config = mockRegisterTool.mock.calls[0][1] as {
+      _meta?: Record<string, unknown>;
+    };
+    expect(config._meta).toEqual({ "com.mailgun/tags": ["send"] });
   });
 });

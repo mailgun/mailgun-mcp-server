@@ -215,6 +215,76 @@ describe("generateToolsFromOpenApi()", () => {
     expect(mockRegisterTool).toHaveBeenCalled();
     expect(mockRegisterTool.mock.calls[0][0]).toBe("get-v4-domains");
   });
+
+  test('default activeTags="all" registers every endpoint that resolves in spec', () => {
+    const spec: OpenApiSpec = {
+      paths: {
+        "/v4/address/validate": {
+          get: { summary: "Validate", parameters: [] },
+        },
+      },
+    };
+    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
+
+    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never);
+
+    const registeredNames = mockRegisterTool.mock.calls.map((c) => c[0]);
+    expect(registeredNames).toContain("validate_email");
+  });
+
+  test("filters out endpoints whose tags do not intersect activeTags", () => {
+    const spec: OpenApiSpec = {
+      paths: {
+        "/v4/address/validate": {
+          get: { summary: "Validate", parameters: [] },
+        },
+      },
+    };
+    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
+
+    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never, new Set(["send"]));
+
+    const registeredNames = mockRegisterTool.mock.calls.map((c) => c[0]);
+    expect(registeredNames).not.toContain("validate_email");
+  });
+
+  test("registers endpoints whose tags intersect activeTags", () => {
+    const spec: OpenApiSpec = {
+      paths: {
+        "/v4/address/validate": {
+          get: { summary: "Validate", parameters: [] },
+        },
+      },
+    };
+    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
+
+    generateToolsFromOpenApi(
+      spec,
+      { registerTool: mockRegisterTool } as never,
+      new Set(["validate"]),
+    );
+
+    const registeredNames = mockRegisterTool.mock.calls.map((c) => c[0]);
+    expect(registeredNames).toContain("validate_email");
+  });
+
+  test('attaches _meta["com.mailgun/tags"] reflecting the entry tags', () => {
+    const spec: OpenApiSpec = {
+      paths: {
+        "/v4/address/validate": {
+          get: { summary: "Validate", parameters: [] },
+        },
+      },
+    };
+    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
+
+    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never);
+
+    const validateCall = mockRegisterTool.mock.calls.find((c) => c[0] === "validate_email");
+    expect(validateCall).toBeDefined();
+    const config = validateCall![1] as { _meta?: Record<string, unknown> };
+    expect(config._meta).toEqual({ "com.mailgun/tags": ["validate"] });
+  });
 });
 
 describe("formatErrorMessage()", () => {
