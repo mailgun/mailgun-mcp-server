@@ -2,6 +2,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { formatHelp, formatInvalidTagsMessage, formatTagList, resolveActiveTags } from "./cli.js";
 import { MAILGUN_API_KEY, OPENAPI_YAML } from "./config.js";
 import { loadOpenApiSpec } from "./openapi.js";
 import { generateToolsFromOpenApi } from "./tools.js";
@@ -14,6 +15,23 @@ export const server = new McpServer({
 
 export async function main(): Promise<void> {
   try {
+    const cli = resolveActiveTags(process.argv.slice(2), process.env);
+
+    if (cli.showHelp) {
+      console.log(formatHelp());
+      process.exit(0);
+    }
+
+    if (cli.listTags) {
+      console.log(formatTagList());
+      process.exit(0);
+    }
+
+    if (cli.invalid.length > 0) {
+      console.error(formatInvalidTagsMessage(cli.invalid));
+      process.exit(1);
+    }
+
     if (!MAILGUN_API_KEY) {
       console.error(
         "Error: MAILGUN_API_KEY environment variable is required. Set it in your MCP client configuration.",
@@ -23,8 +41,8 @@ export async function main(): Promise<void> {
 
     const openApiSpec = loadOpenApiSpec(OPENAPI_YAML);
 
-    generateToolsFromOpenApi(openApiSpec, server);
-    registerCustomTools(server);
+    generateToolsFromOpenApi(openApiSpec, server, cli.activeTags);
+    registerCustomTools(server, cli.activeTags);
 
     const transport = new StdioServerTransport();
     await server.connect(transport);

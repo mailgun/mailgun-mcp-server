@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { makeMailgunRequest, MailgunApiError } from "../api.js";
+import { META_TAGS_KEY, type Tag } from "../tags.js";
 
 // --- Types ---
 
@@ -45,10 +46,7 @@ const DEFAULT_DURATION = "24h";
 
 // --- Helpers ---
 
-function getCount(
-  metrics: Record<string, unknown>,
-  key: string,
-): number | undefined {
+function getCount(metrics: Record<string, unknown>, key: string): number | undefined {
   const val = metrics[key];
   if (typeof val === "number" && !isNaN(val)) return val;
   if (typeof val === "string") {
@@ -99,9 +97,7 @@ export function buildMetricsRequestBody(params: {
 
 // --- Output builder ---
 
-export function buildMetricsSummaryOutput(
-  data: MetricsResponse,
-): MetricsSummaryOutput {
+export function buildMetricsSummaryOutput(data: MetricsResponse): MetricsSummaryOutput {
   const agg = data.aggregates?.metrics ?? {};
   const dataGaps: string[] = [];
   const metricsRaw: Record<string, number> = {};
@@ -171,7 +167,7 @@ function buildErrorResponse(
 
 // --- Tool registration ---
 
-export function register(server: McpServer): void {
+export function register(server: McpServer, tags: readonly Tag[] = []): void {
   server.registerTool(
     "get_metrics_summary",
     {
@@ -183,19 +179,19 @@ export function register(server: McpServer): void {
           .string()
           .optional()
           .describe("Start of time window in ISO 8601 format (e.g. '2026-04-27T00:00:00Z')."),
-        end: z
-          .string()
-          .optional()
-          .describe("End of time window in ISO 8601 format."),
+        end: z.string().optional().describe("End of time window in ISO 8601 format."),
         duration: z
           .string()
           .optional()
-          .describe("Duration shorthand as alternative to start/end (e.g. '24h', '7d'). Defaults to '24h'."),
+          .describe(
+            "Duration shorthand as alternative to start/end (e.g. '24h', '7d'). Defaults to '24h'.",
+          ),
         timezone: z
           .string()
           .optional()
           .describe("Timezone for the window (e.g. 'UTC', 'America/New_York'). Defaults to UTC."),
       },
+      _meta: { [META_TAGS_KEY]: [...tags] },
     },
     async (params) => {
       if (!params.domain || params.domain.trim() === "") {
@@ -226,13 +222,15 @@ export function register(server: McpServer): void {
       }
 
       try {
-        const body = buildMetricsRequestBody(params as {
-          domain: string;
-          start?: string;
-          end?: string;
-          duration?: string;
-          timezone?: string;
-        });
+        const body = buildMetricsRequestBody(
+          params as {
+            domain: string;
+            start?: string;
+            end?: string;
+            duration?: string;
+            timezone?: string;
+          },
+        );
 
         const result = (await makeMailgunRequest(
           "POST",

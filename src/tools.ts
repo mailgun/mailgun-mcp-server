@@ -10,6 +10,7 @@ import { endpoints, parseEndpointEntry } from "./endpoints.js";
 import { makeMailgunRequest, MailgunApiError } from "./api.js";
 import { getOperationDetails, getRequestContentType } from "./openapi.js";
 import { buildParamsSchema, sanitizeToolId } from "./schema.js";
+import { type ActiveTags, META_TAGS_KEY, shouldRegister, type Tag } from "./tags.js";
 
 export const HttpStatus = {
   BAD_REQUEST: 400,
@@ -20,10 +21,17 @@ export const HttpStatus = {
 
 const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,53}$/;
 
-export function generateToolsFromOpenApi(openApiSpec: OpenApiSpec, server: McpServer): void {
+export function generateToolsFromOpenApi(
+  openApiSpec: OpenApiSpec,
+  server: McpServer,
+  activeTags: ActiveTags = "all",
+): void {
   for (const entry of endpoints) {
     try {
-      const { method, path, toolNameOverride } = parseEndpointEntry(entry);
+      const { method, path, toolNameOverride, tags } = parseEndpointEntry(entry);
+
+      if (!shouldRegister(activeTags, tags)) continue;
+
       const operationDetails = getOperationDetails(openApiSpec, method, path);
 
       if (!operationDetails) {
@@ -53,6 +61,7 @@ export function generateToolsFromOpenApi(openApiSpec: OpenApiSpec, server: McpSe
         operation,
         contentType,
         keyMapping,
+        tags,
       );
     } catch (error) {
       const label = typeof entry === "string" ? entry : entry.endpoint;
@@ -71,6 +80,7 @@ export function registerTool(
   operation: OpenApiOperation,
   contentType: string,
   keyMapping: Record<string, string> = {},
+  tags: readonly Tag[] = [],
 ): void {
   const httpMethod = method.toUpperCase();
   server.registerTool(
@@ -78,6 +88,7 @@ export function registerTool(
     {
       description: toolDescription,
       inputSchema: paramsSchema,
+      _meta: { [META_TAGS_KEY]: [...tags] },
     },
     async (params) => {
       try {
