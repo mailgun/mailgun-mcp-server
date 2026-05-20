@@ -1,7 +1,6 @@
 {
   "name": "@mailgun/mcp-server",
   "version": "2.1.0",
-  "mcpName": "com.mailgun/mailgun-mcp-server",
   "description": "An MCP server that gives AI agents a practical interface to Mailgun workflows for sending, diagnosing deliverability, and taking account actions safely.",
   "keywords": [
     "ai",
@@ -34,6 +33,7 @@
     "fmt:check": "oxfmt --check",
     "lint": "npm run check:versions && oxlint",
     "lint:fix": "oxlint --fix",
+    "prepare": "husky",
     "prepublishOnly": "npm run build",
     "start": "node dist/mailgun-mcp.js",
     "test": "vitest run",
@@ -48,12 +48,21 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.5.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "oxfmt": "^0.45.0",
     "oxlint": "^1.60.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.3"
   },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,cjs}": [
+      "oxlint --fix",
+      "oxfmt"
+    ]
+  },
   "engines": {
     "node": ">=20.20.2"
-  }
+  },
+  "mcpName": "com.mailgun/mailgun-mcp-server"
 }

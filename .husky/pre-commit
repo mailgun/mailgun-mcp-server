@@ -1,0 +1,2 @@
+npm run check:versions
+npx lint-staged
