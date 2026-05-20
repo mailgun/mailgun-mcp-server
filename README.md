@@ -50,10 +50,46 @@ Add the following to your MCP client configuration:
 
 #### Environment Variables
 
-| Variable             | Required | Default | Description              |
-| -------------------- | -------- | ------- | ------------------------ |
-| `MAILGUN_API_KEY`    | Yes      | —       | Your Mailgun API key     |
-| `MAILGUN_API_REGION` | No       | `us`    | API region: `us` or `eu` |
+| Variable             | Required | Default | Description                                                                                |
+| -------------------- | -------- | ------- | ------------------------------------------------------------------------------------------ |
+| `MAILGUN_API_KEY`    | Yes      | —       | Your Mailgun API key                                                                       |
+| `MAILGUN_API_REGION` | No       | `us`    | API region: `us` or `eu`                                                                   |
+| `MAILGUN_MCP_TAGS`   | No       | (all)   | Comma-separated product tags to enable. Equivalent to `--tags`. CLI flag takes precedence. |
+
+### Tag Filtering
+
+You can scope which tools the server registers to one or more Mailgun product tags. This is useful for narrowing the toolset shown to the model — for example, only exposing validation tools to a workflow that doesn't need send capabilities.
+
+Valid tags: `send`, `validate`, `optimize`, `inspect`. When unspecified, every tool is registered (today's default).
+
+Filtering uses **OR semantics**: a tool is registered if any of its tags appears in the active set.
+
+**Via CLI flag** — pass `--tags` in your MCP client config's `args`:
+
+```json
+{
+  "mcpServers": {
+    "mailgun": {
+      "command": "npx",
+      "args": ["-y", "@mailgun/mcp-server", "--tags", "validate,inspect"],
+      "env": {
+        "MAILGUN_API_KEY": "YOUR-mailgun-api-key"
+      }
+    }
+  }
+}
+```
+
+**Via environment variable** — set `MAILGUN_MCP_TAGS` (CLI flag wins if both are present):
+
+```json
+"env": {
+  "MAILGUN_API_KEY": "YOUR-mailgun-api-key",
+  "MAILGUN_MCP_TAGS": "validate,inspect"
+}
+```
+
+**Discoverability** — run the binary with `--list-tags` to print supported tag values, or `--help` for full usage. Unknown tags are rejected at startup with a clear error message.
 
 #### Client-Specific Config Paths
 
@@ -157,6 +193,10 @@ In your MCP client config, replace the `npx` command with:
 "command": "node",
 "args": ["/path/to/mailgun-mcp-server/src/mailgun-mcp.js"]
 ```
+
+### Pre-commit hooks
+
+`npm install` installs a git pre-commit hook (via husky) that runs `oxlint --fix` and `oxfmt` on staged TypeScript/JavaScript files and runs `npm run check:versions`. Fixable issues are auto-fixed and re-staged; commits that introduce unfixable lint errors or version-sync mismatches are rejected. If you already had a local clone before this change, run `npm install` once to install the hook.
 
 ## Security Considerations
 

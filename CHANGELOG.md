@@ -11,6 +11,12 @@
   require logic beyond OpenAPI-to-MCP mapping.
 - **Plan-aware error messages:** API errors now include actionable guidance based on
   HTTP status code (401, 403, 404, 400) with links to billing when relevant.
+- **Tag-based tool filtering.** Operators can now scope which tools the server
+  registers via the `--tags` CLI flag or `MAILGUN_MCP_TAGS` env var (values: `send`,
+  `validate`, `optimize`, `inspect`). CLI takes precedence over the env var, and
+  filtering uses OR semantics. Adds `--help` and `--list-tags` for discoverability.
+  Every registered tool also carries a `_meta["com.mailgun/tags"]` annotation for
+  downstream client-side filtering.
 
 ### Changed
 
