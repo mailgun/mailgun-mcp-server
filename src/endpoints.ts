@@ -27,7 +27,15 @@ export function parseEndpointEntry(entry: EndpointEntry): ParsedEndpointEntry {
     tags: entry.tags && entry.tags.length > 0 ? entry.tags : DEFAULT_TAGS,
   };
 }
-
+// Endpoints added as plain will be tagged with the `send` product type in the `_meta` field.
+// If you would like to tag it as a different product use the object version of the `EndpointEntry` type.
+// Valid product types are: `send`, `validate`, `optimize`, `inspect`.
+// Example:
+// {
+//   endpoint: "POST /v3/{domain_name}/some-other-endpoint",
+//   toolName: "some_other_endpoint",
+//   tags: ["validate"],
+// }
 export const endpoints: readonly EndpointEntry[] = [
   // Messages
   "POST /v3/{domain_name}/messages",
