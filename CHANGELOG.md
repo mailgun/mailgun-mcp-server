@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.1.0
+
+### Added
+
+- **New tools:** `validate_email`, `get_inbox_placement_result`, `get_preview_result`,
+  and `get_metrics_summary` for email validation, inbox placement testing, email
+  preview results, and sending metrics analysis.
+- **Custom tool framework:** Introduced `src/custom-tools/` directory for tools that
+  require logic beyond OpenAPI-to-MCP mapping.
+- **Plan-aware error messages:** API errors now include actionable guidance based on
+  HTTP status code (401, 403, 404, 400) with links to billing when relevant.
+- **Tag-based tool filtering.** Operators can now scope which tools the server
+  registers via the `--tags` CLI flag or `MAILGUN_MCP_TAGS` env var (values: `send`,
+  `validate`, `optimize`, `inspect`). CLI takes precedence over the env var, and
+  filtering uses OR semantics. Adds `--help` and `--list-tags` for discoverability.
+  Every registered tool also carries a `_meta["com.mailgun/tags"]` annotation for
+  downstream client-side filtering.
+
+### Changed
+
+- `makeMailgunRequest` now rejects with `MailgunApiError` (carrying `statusCode` and
+  `apiMessage`) instead of a generic `Error`.
+
+### Maintenance
+
+- Split monolithic test file into module-specific test files under `test/`.
+
 ## 2.0.0
 
 ### Breaking (runtime)

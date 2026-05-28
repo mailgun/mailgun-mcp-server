@@ -13261,6 +13261,121 @@ paths:
                     message: Incompatible key for this endpoint
       security:
         - basicAuth: []
+  /v4/address/validate:
+    get:
+      tags:
+        - Validations
+      summary: Validate Address V4
+      description: A single email address to validate.
+      operationId: GET-v4-address-validate
+      parameters:
+        - name: address
+          in: query
+          description: The address to be validated
+          required: true
+          schema:
+            type: string
+        - name: provider_lookup
+          in: query
+          description: Enable/disable provider lookup, default is true
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: A 200 response
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/github.com-mailgun-validations-validation-steps-base-ValidationResponse
+        default:
+          description: A default response
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/github.com-mailgun-scaffold-httpapi-GenericResponse
+      security:
+        - basicAuth: []
+  /v4/inbox/results/{result}:
+    get:
+      tags:
+        - Inbox Placement
+      summary: Get Result Details
+      description: Get the details for a single inbox placement test result.
+      operationId: GET-v4-inbox-results-result
+      parameters:
+        - name: result
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: provider
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A 200 response
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/Inbox_Placement_Testing_github.com-mailgun-scaffold-httpapi-Response
+        "404":
+          description: A 404 response
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/Inbox_Placement_Testing_github.com-mailgun-scaffold-httpapi-GenericResponse
+      security:
+        - basicAuth: []
+  /v1/preview/tests/{test_id}/results:
+    get:
+      tags:
+        - Email Preview
+      summary: Get Test Results
+      description: Returns the results for the specified email preview test.
+      operationId: GET-v1-preview-tests-test_id-results
+      parameters:
+        - name: test_id
+          in: path
+          description: Test to get results for
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A 200 response
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/github.com-mailgun-emailpreview-clients-preview-GetTestResultsResponse
+        "400":
+          description: A 400 response
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/github.com-mailgun-scaffold-httpapi-GenericAPIError
+        "401":
+          description: A 401 response
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/github.com-mailgun-scaffold-httpapi-GenericAPIError
+        default:
+          description: A default response
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/github.com-mailgun-emailpreview-clients-preview-ErrorResponse
+      security:
+        - basicAuth: []
 components:
   schemas:
     github.com-mailgun-influx-httpapi-SendMessageResponse:
@@ -20330,6 +20445,124 @@ components:
           description: Status message
       required:
         - message
+    github.com-mailgun-validations-validation-engagement-EngagementData:
+      type: object
+      properties:
+        engaging:
+          type: boolean
+        behavior:
+          type: string
+        is_bot:
+          type: boolean
+      required:
+        - engaging
+        - is_bot
+    github.com-mailgun-validations-validation-steps-base-ValidationResponse:
+      type: object
+      properties:
+        address:
+          type: string
+        did_you_mean:
+          type: string
+        engagement:
+          anyOf:
+            - $ref: >-
+                #/components/schemas/github.com-mailgun-validations-validation-engagement-EngagementData
+            - type: "null"
+        is_disposable_address:
+          type: boolean
+        is_role_address:
+          type: boolean
+        reason:
+          type: array
+          items:
+            type: string
+        result:
+          type: string
+        risk:
+          type: string
+        root_address:
+          type: string
+        last_seen:
+          type: integer
+          format: int32
+      required:
+        - address
+        - is_disposable_address
+        - is_role_address
+        - reason
+        - result
+        - risk
+    Inbox_Placement_Testing_github.com-mailgun-scaffold-httpapi-Response:
+      type: object
+      additionalProperties:
+        type: object
+    Inbox_Placement_Testing_github.com-mailgun-scaffold-httpapi-GenericResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Response message
+      required:
+        - message
+    github.com-mailgun-emailpreview-clients-preview-TestResult:
+      type: object
+      properties:
+        id:
+          type: string
+        display_name:
+          type: string
+        client:
+          type: string
+        os:
+          type: string
+        category:
+          type: string
+        browser:
+          type: string
+        screenshots:
+          type: object
+          additionalProperties:
+            type: string
+        thumbnail:
+          type: string
+        full_thumbnail:
+          type: string
+        status:
+          type: string
+        status_details:
+          type: object
+          properties:
+            submitted:
+              type: integer
+              format: int32
+            completed:
+              type: integer
+              format: int32
+            bounce_code:
+              type: string
+            bounce_message:
+              type: string
+    github.com-mailgun-emailpreview-clients-preview-GetTestResultsResponse:
+      type: object
+      additionalProperties:
+        anyOf:
+          - $ref: >-
+              #/components/schemas/github.com-mailgun-emailpreview-clients-preview-TestResult
+          - type: "null"
+    github.com-mailgun-emailpreview-clients-preview-Error:
+      type: object
+      properties:
+        name:
+          type: string
+        message:
+          type: string
+    github.com-mailgun-emailpreview-clients-preview-ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: >-
+            #/components/schemas/github.com-mailgun-emailpreview-clients-preview-Error
   securitySchemes:
     basicAuth:
       type: http

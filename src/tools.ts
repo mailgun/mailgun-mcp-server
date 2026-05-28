@@ -6,15 +6,32 @@ import type {
   PathParametersResult,
   SeparatedParameters,
 } from "./types.js";
-import { endpoints } from "./endpoints.js";
-import { makeMailgunRequest } from "./api.js";
+import { endpoints, parseEndpointEntry } from "./endpoints.js";
+import { makeMailgunRequest, MailgunApiError } from "./api.js";
 import { getOperationDetails, getRequestContentType } from "./openapi.js";
 import { buildParamsSchema, sanitizeToolId } from "./schema.js";
+import { type ActiveTags, META_TAGS_KEY, shouldRegister, type Tag } from "./tags.js";
 
-export function generateToolsFromOpenApi(openApiSpec: OpenApiSpec, server: McpServer): void {
-  for (const endpoint of endpoints) {
+export const HttpStatus = {
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+} as const;
+
+const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,53}$/;
+
+export function generateToolsFromOpenApi(
+  openApiSpec: OpenApiSpec,
+  server: McpServer,
+  activeTags: ActiveTags = "all",
+): void {
+  for (const entry of endpoints) {
     try {
-      const [method, path] = endpoint.split(" ");
+      const { method, path, toolNameOverride, tags } = parseEndpointEntry(entry);
+
+      if (!shouldRegister(activeTags, tags)) continue;
+
       const operationDetails = getOperationDetails(openApiSpec, method, path);
 
       if (!operationDetails) {
@@ -22,9 +39,15 @@ export function generateToolsFromOpenApi(openApiSpec: OpenApiSpec, server: McpSe
         continue;
       }
 
+      if (toolNameOverride !== undefined && !TOOL_ID_PATTERN.test(toolNameOverride)) {
+        throw new Error(
+          `Invalid toolName override "${toolNameOverride}" for ${method} ${path}: must match ${TOOL_ID_PATTERN}`,
+        );
+      }
+
       const { operation, operationId } = operationDetails;
       const { paramsSchema, keyMapping } = buildParamsSchema(operation, openApiSpec);
-      const toolId = sanitizeToolId(operationId);
+      const toolId = toolNameOverride ?? sanitizeToolId(operationId);
       const toolDescription = operation.summary || `${method.toUpperCase()} ${path}`;
       const contentType = getRequestContentType(operation);
 
@@ -38,9 +61,11 @@ export function generateToolsFromOpenApi(openApiSpec: OpenApiSpec, server: McpSe
         operation,
         contentType,
         keyMapping,
+        tags,
       );
     } catch (error) {
-      console.error(`Failed to process endpoint ${endpoint}: ${(error as Error).message}`);
+      const label = typeof entry === "string" ? entry : entry.endpoint;
+      console.error(`Failed to process endpoint ${label}: ${(error as Error).message}`);
     }
   }
 }
@@ -55,6 +80,7 @@ export function registerTool(
   operation: OpenApiOperation,
   contentType: string,
   keyMapping: Record<string, string> = {},
+  tags: readonly Tag[] = [],
 ): void {
   const httpMethod = method.toUpperCase();
   server.registerTool(
@@ -62,6 +88,7 @@ export function registerTool(
     {
       description: toolDescription,
       inputSchema: paramsSchema,
+      _meta: { [META_TAGS_KEY]: [...tags] },
     },
     async (params) => {
       try {
@@ -100,7 +127,7 @@ export function registerTool(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: formatErrorMessage(error, httpMethod, path),
             },
           ],
         };
@@ -174,4 +201,27 @@ export function appendQueryString(path: string, queryParams: Record<string, unkn
   }
 
   return `${path}?${qs}`;
+}
+
+export function formatErrorMessage(error: unknown, method: string, path: string): string {
+  if (error instanceof MailgunApiError) {
+    const endpoint = `${method.toUpperCase()} ${path}`;
+    switch (error.statusCode) {
+      case HttpStatus.UNAUTHORIZED:
+        return `Authentication failed for ${endpoint}. Verify your MAILGUN_API_KEY is correct and active.`;
+      case HttpStatus.FORBIDDEN:
+        return (
+          `Access denied for ${endpoint}. Your current Mailgun plan may not include this capability. ` +
+          `API response: ${error.apiMessage ?? "Forbidden"}. ` +
+          `Visit https://app.mailgun.com/settings/billing to review your plan.`
+        );
+      case HttpStatus.NOT_FOUND:
+        return `Resource not found for ${endpoint}. Verify the resource identifier is correct. API response: ${error.apiMessage ?? "Not found"}.`;
+      case HttpStatus.BAD_REQUEST:
+        return `Bad request for ${endpoint}: ${error.apiMessage ?? "Invalid parameters"}. Check the input values and try again.`;
+      default:
+        return `Mailgun API error (HTTP ${error.statusCode}) for ${endpoint}: ${error.apiMessage ?? error.message}`;
+    }
+  }
+  return `Error: ${error instanceof Error ? error.message : String(error)}`;
 }

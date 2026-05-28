@@ -1,4 +1,42 @@
-export const endpoints = [
+import type { Tag } from "./tags.js";
+
+export type EndpointEntry = string | { endpoint: string; toolName?: string; tags?: readonly Tag[] };
+
+export interface ParsedEndpointEntry {
+  method: string;
+  path: string;
+  toolNameOverride?: string;
+  // Always non-empty. Defaults to ["send"] when an entry omits an explicit `tags`
+  // Promote an entry to the object form to override.
+  tags: readonly Tag[];
+}
+
+const DEFAULT_TAGS: readonly Tag[] = ["send"];
+
+export function parseEndpointEntry(entry: EndpointEntry): ParsedEndpointEntry {
+  if (typeof entry === "string") {
+    const [method, path] = entry.split(" ");
+    return { method, path, tags: DEFAULT_TAGS };
+  }
+
+  const [method, path] = entry.endpoint.split(" ");
+  return {
+    method,
+    path,
+    toolNameOverride: entry.toolName,
+    tags: entry.tags && entry.tags.length > 0 ? entry.tags : DEFAULT_TAGS,
+  };
+}
+// Endpoints added as plain will be tagged with the `send` product type in the `_meta` field.
+// If you would like to tag it as a different product use the object version of the `EndpointEntry` type.
+// Valid product types are: `send`, `validate`, `optimize`, `inspect`.
+// Example:
+// {
+//   endpoint: "POST /v3/{domain_name}/some-other-endpoint",
+//   toolName: "some_other_endpoint",
+//   tags: ["validate"],
+// }
+export const endpoints: readonly EndpointEntry[] = [
   // Messages
   "POST /v3/{domain_name}/messages",
   "GET /v3/domains/{domain_name}/messages/{storage_key}",
@@ -102,4 +140,21 @@ export const endpoints = [
 
   // Account Limits
   "GET /v5/accounts/limit/custom/monthly",
+
+  // Validation
+  { endpoint: "GET /v4/address/validate", toolName: "validate_email", tags: ["validate"] },
+
+  // Inbox Placement (Optimize)
+  {
+    endpoint: "GET /v4/inbox/results/{result}",
+    toolName: "get_inbox_placement_result",
+    tags: ["optimize"],
+  },
+
+  // Email Preview (Inspect)
+  {
+    endpoint: "GET /v1/preview/tests/{test_id}/results",
+    toolName: "get_preview_result",
+    tags: ["inspect"],
+  },
 ] as const;
