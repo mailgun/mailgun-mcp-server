@@ -4,9 +4,9 @@
 
 ### Added
 
-- **Multi-product coverage.** The OpenAPI-driven tool registry now spans four
+- **Multi-product coverage.** The OpenAPI driven tool registry now spans four
   Mailgun products — `send`, `validate`, `optimize`, and `inspect`. Endpoints are
-  drawn from a curated allow-list, mapped to MCP tools from the bundled OpenAPI
+  drawn from a curated allowlist, mapped to MCP tools from the bundled OpenAPI
   spec, and annotated with a product tag; all matching tools are registered at
   startup (scoped by tag filtering, see below). New endpoints added this release:
   - **Validation** — `validate_email` (`GET /v4/address/validate`) checks address
