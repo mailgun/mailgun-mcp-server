@@ -4,9 +4,21 @@
 
 ### Added
 
-- **New tools:** `validate_email`, `get_inbox_placement_result`, `get_preview_result`,
-  and `get_metrics_summary` for email validation, inbox placement testing, email
-  preview results, and sending metrics analysis.
+- **Multi-product coverage.** The OpenAPI driven tool registry now spans four
+  Mailgun products — `send`, `validate`, `optimize`, and `inspect`. Endpoints are
+  drawn from a curated allowlist, mapped to MCP tools from the bundled OpenAPI
+  spec, and annotated with a product tag; all matching tools are registered at
+  startup (scoped by tag filtering, see below). New endpoints added this release:
+  - **Validation** — `validate_email` (`GET /v4/address/validate`) checks address
+    deliverability and syntax before sending. Tagged `validate`.
+  - **Optimize / Inbox Placement** — `get_inbox_placement_result`
+    (`GET /v4/inbox/results/{result}`) retrieves seed/inbox placement test results.
+    Tagged `optimize`.
+  - **Inspect / Email Preview** — `get_preview_result`
+    (`GET /v1/preview/tests/{test_id}/results`) retrieves email rendering/preview
+    test results. Tagged `inspect`.
+- **New analytics tool:** `get_metrics_summary` for a convenient rollup of sending
+  metrics analysis.
 - **Custom tool framework:** Introduced `src/custom-tools/` directory for tools that
   require logic beyond OpenAPI-to-MCP mapping.
 - **Plan-aware error messages:** API errors now include actionable guidance based on
