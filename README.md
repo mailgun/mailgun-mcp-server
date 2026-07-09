@@ -1,21 +1,24 @@
 # Mailgun MCP Server
 
+[![npm version](https://img.shields.io/npm/v/@mailgun/mcp-server.svg)](https://www.npmjs.com/package/@mailgun/mcp-server)
 [![MCP](https://img.shields.io/badge/MCP-Server-blue.svg)](https://github.com/modelcontextprotocol)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
 ## Overview
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Mailgun](https://mailgun.com) that gives AI agents a practical, workflow-oriented interface to send email, diagnose deliverability, and manage account operations.
 
-> **Note:** This MCP server runs locally on your machine. Mailgun does not currently offer a hosted version of this server.
+> [!NOTE]
+> This MCP server runs locally on your machine and communicates over stdio. Mailgun does not currently offer a hosted version of this server.
 
 ### Capabilities
 
 - **Messaging** — Send emails, retrieve stored messages, resend messages
 - **Domains** — View domain details, verify DNS configuration, manage tracking settings (click, open, unsubscribe)
-- **Webhooks** — List, create, update, and delete event webhooks
+- **Webhooks** — List, create, and update event webhooks
 - **Routes** — View and update inbound email routing rules
-- **Mailing Lists** — Create and manage mailing lists and their members
-- **Templates** — Create and manage email templates with versioning
+- **Mailing Lists** — Create, view, and update mailing lists and their members
+- **Templates** — Create, view, and update email templates with versioning
 - **Analytics** — Query sending metrics, usage metrics, and logs
 - **Stats** — View aggregate statistics by domain, tag, provider, device, and country
 - **Suppressions** — View bounces, unsubscribes, complaints, and allowlist entries
@@ -28,6 +31,9 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Ma
 
 The parenthetical labels above (`validate`, `optimize`, `inspect`) are the product tags used by [tag filtering](#tag-filtering). Every other capability is registered under the `send` tag.
 
+> [!NOTE]
+> Tools are limited to read and update operations — no delete operations are exposed, which keeps the blast radius of an unintended action small. See [Security Considerations](#security-considerations).
+
 ### How it works
 
 The server is OpenAPI-driven. At startup it parses a bundled Mailgun OpenAPI spec and registers a curated allow-list of endpoints as MCP tools, generating each tool's input schema (via Zod) from the spec. Every tool is annotated with a Mailgun product tag (`send`, `validate`, `optimize`, or `inspect`). All matching tools are registered up front — there is no lazy or on-demand loading. [Tag filtering](#tag-filtering) is applied at startup to scope *which* tools get registered, so a given workflow can expose only the products it needs.
@@ -37,11 +43,27 @@ The server is OpenAPI-driven. At startup it parses a bundled Mailgun OpenAPI spe
 - Node.js (v20.12 or higher)
 - Mailgun account and API key
 
-## Quick Start
+## Installation
 
-### Configuration
+The server is published to npm as [`@mailgun/mcp-server`](https://www.npmjs.com/package/@mailgun/mcp-server) and runs over stdio. Most clients can launch it on demand with `npx`, so there's nothing to install globally. In each snippet below, replace `YOUR-mailgun-api-key` with a key from your [Mailgun API security settings](https://app.mailgun.com/settings/api_security).
 
-Add the following to your MCP client configuration:
+> [!TIP]
+> If your account is hosted in Mailgun's EU region, add `"MAILGUN_API_REGION": "eu"` to the `env` block (or `-e MAILGUN_API_REGION=eu` on the CLI). It defaults to `us`.
+
+### Claude Code
+
+```bash
+claude mcp add mailgun -e MAILGUN_API_KEY=YOUR-mailgun-api-key -- npx -y @mailgun/mcp-server
+```
+
+Then run `/mcp` in Claude Code to confirm the **mailgun** server is connected.
+
+### Claude Desktop
+
+Open **Settings → Developer → Edit Config**, or edit the file directly:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -58,15 +80,108 @@ Add the following to your MCP client configuration:
 }
 ```
 
-#### Environment Variables
+### Cursor
 
-| Variable             | Required | Default | Description                                                                                |
-| -------------------- | -------- | ------- | ------------------------------------------------------------------------------------------ |
-| `MAILGUN_API_KEY`    | Yes      | —       | Your Mailgun API key                                                                       |
-| `MAILGUN_API_REGION` | No       | `us`    | API region: `us` or `eu`                                                                   |
-| `MAILGUN_MCP_TAGS`   | No       | (all)   | Comma-separated product tags to enable. Equivalent to `--tags`. CLI flag takes precedence. |
+Open the command palette and choose **Cursor Settings → MCP → Add new global MCP server**, then add:
 
-### Tag Filtering
+```json
+{
+  "mcpServers": {
+    "mailgun": {
+      "command": "npx",
+      "args": ["-y", "@mailgun/mcp-server"],
+      "env": {
+        "MAILGUN_API_KEY": "YOUR-mailgun-api-key"
+      }
+    }
+  }
+}
+```
+
+### Codex
+
+```bash
+codex mcp add mailgun \
+  --env MAILGUN_API_KEY=YOUR-mailgun-api-key \
+  -- npx -y @mailgun/mcp-server
+```
+
+### VS Code (GitHub Copilot)
+
+Add the following to your `settings.json`:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "mailgun": {
+        "command": "npx",
+        "args": ["-y", "@mailgun/mcp-server"],
+        "env": {
+          "MAILGUN_API_KEY": "YOUR-mailgun-api-key"
+        }
+      }
+    }
+  }
+}
+```
+
+### Windsurf
+
+```json
+{
+  "mcpServers": {
+    "mailgun": {
+      "command": "npx",
+      "args": ["-y", "@mailgun/mcp-server"],
+      "env": {
+        "MAILGUN_API_KEY": "YOUR-mailgun-api-key"
+      }
+    }
+  }
+}
+```
+
+### Gemini CLI
+
+Add to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "mailgun": {
+      "command": "npx",
+      "args": ["-y", "@mailgun/mcp-server"],
+      "env": {
+        "MAILGUN_API_KEY": "YOUR-mailgun-api-key"
+      }
+    }
+  }
+}
+```
+
+## Configuration
+
+### Environment variables
+
+| Variable               | Required | Default              | Description                                                                                 |
+| ---------------------- | -------- | -------------------- | ------------------------------------------------------------------------------------------- |
+| `MAILGUN_API_KEY`      | Yes      | —                    | Your Mailgun API key                                                                        |
+| `MAILGUN_API_REGION`   | No       | `us`                 | API region: `us` or `eu`                                                                     |
+| `MAILGUN_API_HOSTNAME` | No       | (derived from region) | Override the API hostname (e.g. `api.eu.mailgun.net`). Takes precedence over the region.     |
+| `MAILGUN_MCP_TAGS`     | No       | (all)                | Comma-separated product tags to enable. Equivalent to `--tags`. The CLI flag takes precedence. |
+
+### CLI options
+
+Pass flags after the package name in your client's `args` (e.g. `["-y", "@mailgun/mcp-server", "--tags", "validate,inspect"]`).
+
+| Flag              | Description                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| `--tags <list>`   | Comma-separated product tags to enable (default: all). Valid: `send`, `validate`, `optimize`, `inspect`. |
+| `--list-tags`     | Print the valid tag values and exit.                                                   |
+| `--help`, `-h`    | Show usage and exit.                                                                    |
+
+### Tag filtering
 
 You can scope which tools the server registers to one or more Mailgun product tags. This is useful for narrowing the toolset shown to the model — for example, only exposing validation tools to a workflow that doesn't need send capabilities.
 
@@ -99,13 +214,8 @@ Filtering uses **OR semantics**: a tool is registered if any of its tags appears
 }
 ```
 
-**Discoverability** — run the binary with `--list-tags` to print supported tag values, or `--help` for full usage. Unknown tags are rejected at startup with a clear error message.
-
-#### Client-Specific Config Paths
-
-- **Claude Desktop** (macOS): `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Claude Desktop** (Windows): `%APPDATA%/Claude/claude_desktop_config.json`
-- **Claude Code**: Run `claude mcp add` or edit `~/.claude.json`
+> [!TIP]
+> Run the binary with `--list-tags` to print supported tag values, or `--help` for full usage. Unknown tags are rejected at startup with a clear error message.
 
 ## Sample Prompts
 
@@ -117,7 +227,8 @@ like it's from the IT Desk from Office Space? Please use the sending domain
 DOMAIN_HERE, and make the email from "postmaster@DOMAIN_HERE"!
 ```
 
-> Note: some MCP clients require a paid plan to invoke tools that send data. If sending fails silently, check your client's plan.
+> [!NOTE]
+> Some MCP clients require a paid plan to invoke tools that send data. If sending fails silently, check your client's plan.
 
 #### Fetch and Visualize Sending Statistics
 
@@ -208,20 +319,60 @@ renders correctly across clients.
 
 ## Development
 
-To run from source, clone the repository and use `node` directly:
+### Run from source
+
+The server is written in TypeScript. Clone, install, build, and test:
 
 ```bash
 git clone https://github.com/mailgun/mailgun-mcp-server.git
 cd mailgun-mcp-server
 npm install
+npm run build
 npm test
 ```
 
-In your MCP client config, replace the `npx` command with:
+`npm run build` compiles `src/` to `dist/` and copies the bundled OpenAPI spec. Point your MCP client at the built entry instead of `npx` (use an absolute path):
 
 ```json
-"command": "node",
-"args": ["/path/to/mailgun-mcp-server/src/mailgun-mcp.js"]
+{
+  "mcpServers": {
+    "mailgun": {
+      "command": "node",
+      "args": ["/absolute/path/to/mailgun-mcp-server/dist/mailgun-mcp.js"],
+      "env": {
+        "MAILGUN_API_KEY": "YOUR-mailgun-api-key"
+      }
+    }
+  }
+}
+```
+
+### Live testing while you edit
+
+MCP servers are long-lived stdio processes that don't hot-reload, so the loop is: rebuild on save, then reconnect the client to pick up changes.
+
+1. Run `npm run build` once so `dist/openapi.yaml` is in place.
+2. Keep the TypeScript compiler running to rebuild `dist/` on every save:
+
+   ```bash
+   npx tsc --watch
+   ```
+
+3. Point a separate MCP client (or MCP Inspector, below) at `dist/mailgun-mcp.js`. After a change, restart the MCP client session to load the new build.
+
+### Testing with MCP Inspector
+
+The [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) lets you exercise tools without a full client. Build first, then launch it against the built server:
+
+```bash
+npm run build
+MAILGUN_API_KEY=YOUR-mailgun-api-key npx @modelcontextprotocol/inspector node dist/mailgun-mcp.js
+```
+
+Open the Inspector UI, click **Connect**, then use **List Tools** to verify the server is working. To test a filtered toolset, append flags after the server path:
+
+```bash
+MAILGUN_API_KEY=YOUR-mailgun-api-key npx @modelcontextprotocol/inspector node dist/mailgun-mcp.js --tags validate,inspect
 ```
 
 ### Pre-commit hooks
