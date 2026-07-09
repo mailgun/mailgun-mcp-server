@@ -28,6 +28,10 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Ma
 
 The parenthetical labels above (`validate`, `optimize`, `inspect`) are the product tags used by [tag filtering](#tag-filtering). Every other capability is registered under the `send` tag.
 
+### How it works
+
+The server is OpenAPI-driven. At startup it parses a bundled Mailgun OpenAPI spec and registers a curated allow-list of endpoints as MCP tools, generating each tool's input schema (via Zod) from the spec. Every tool is annotated with a Mailgun product tag (`send`, `validate`, `optimize`, or `inspect`). All matching tools are registered up front — there is no lazy or on-demand loading. [Tag filtering](#tag-filtering) is applied at startup to scope *which* tools get registered, so a given workflow can expose only the products it needs.
+
 ## Prerequisites
 
 - Node.js (v20.12 or higher)
