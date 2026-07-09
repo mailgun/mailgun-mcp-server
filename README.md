@@ -21,6 +21,12 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Ma
 - **Suppressions** — View bounces, unsubscribes, complaints, and allowlist entries
 - **IPs & IP Pools** — View IP assignments and dedicated IP pool configuration
 - **Bounce Classification** — Analyze bounce types and delivery issues
+- **Validation** — Validate email address deliverability and syntax before sending (`validate`)
+- **Optimize (Inbox Placement)** — Retrieve inbox placement / seed test results to gauge deliverability (`optimize`)
+- **Inspect (Email Preview)** — Retrieve email rendering and preview test results across clients (`inspect`)
+- **Account Limits** — View custom monthly sending limits
+
+The parenthetical labels above (`validate`, `optimize`, `inspect`) are the product tags used by [tag filtering](#tag-filtering). Every other capability is registered under the `send` tag.
 
 ## Prerequisites
 
@@ -174,6 +180,26 @@ Break down my email engagement by country and device for DOMAIN_HERE.
 ```
 List all my domains and show which ones have tracking enabled for clicks
 and opens.
+```
+
+#### Validate an Email Address
+
+```
+Validate the email address EMAIL_HERE and tell me whether it's safe to send to.
+```
+
+#### Check Inbox Placement (Optimize)
+
+```
+Pull the inbox placement results for seed test RESULT_ID_HERE and summarize
+where my message landed (inbox, spam, or missing) by provider.
+```
+
+#### Preview an Email (Inspect)
+
+```
+Get the email preview results for test TEST_ID_HERE and tell me if the email
+renders correctly across clients.
 ```
 
 ## Development
