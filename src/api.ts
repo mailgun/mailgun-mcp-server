@@ -17,6 +17,11 @@ export async function makeMailgunRequest(
   requestPath: string,
   data: Record<string, unknown> | null = null,
   contentType: string = "application/x-www-form-urlencoded",
+  // Optional per-request timeout in milliseconds. When omitted, behavior is
+  // unchanged for existing callers (Node's default socket behavior, no timeout).
+  // This is a request-level timeout only; it does not add retries and is
+  // independent of any higher-level polling deadline.
+  timeoutMs?: number,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const cleanPath = requestPath.startsWith("/") ? requestPath.substring(1) : requestPath;
@@ -62,6 +67,14 @@ export async function makeMailgunRequest(
     req.on("error", (error: Error) => {
       reject(error);
     });
+
+    if (timeoutMs !== undefined && timeoutMs > 0) {
+      req.setTimeout(timeoutMs, () => {
+        // Abort the in-flight request; the resulting error rejects the promise.
+        // No retry is attempted.
+        req.destroy(new MailgunApiError(`Request timed out after ${timeoutMs}ms`, 0));
+      });
+    }
 
     if (data && method !== "GET") {
       if (contentType === "application/json") {
