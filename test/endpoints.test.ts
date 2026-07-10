@@ -195,3 +195,101 @@ describe("new endpoint validation against OpenAPI spec", () => {
     expect(isOptional(paramsSchema.test_id)).toBe(false);
   });
 });
+
+describe("Inspect email preview QA read primitives", () => {
+  const inspectPrimitives: { endpoint: string; toolName: string; summary: string }[] = [
+    { endpoint: "GET /v2/preview/tests", toolName: "list_preview_tests", summary: "List/Search Tests V2" },
+    {
+      endpoint: "GET /v2/preview/tests/{test_id}",
+      toolName: "get_preview_test_status",
+      summary: "Get Emailpreview Test Information V2",
+    },
+    {
+      endpoint: "GET /v2/preview/tests/{test_id}/results/{client_id}",
+      toolName: "get_preview_client_result",
+      summary: "Get Test Results by client ID V2",
+    },
+    {
+      endpoint: "GET /v1/preview/tests/clients",
+      toolName: "list_preview_clients",
+      summary: "List Clients",
+    },
+    {
+      endpoint: "GET /v1/inspect/links/{id}",
+      toolName: "get_link_validation_result",
+      summary: "Get Link Validation Results",
+    },
+    {
+      endpoint: "GET /v1/inspect/images/{id}",
+      toolName: "get_image_validation_result",
+      summary: "Get Image Validation Results",
+    },
+    {
+      endpoint: "GET /v1/inspect/accessibility/{id}",
+      toolName: "get_accessibility_result",
+      summary: "Get Accessibility Test",
+    },
+    {
+      endpoint: "GET /v1/inspect/analyze/{test_id}",
+      toolName: "get_code_analysis_result",
+      summary: "Get Code Analysis Results",
+    },
+  ];
+
+  const parsed = new Map<string, ReturnType<typeof parseEndpointEntry>>();
+  for (const entry of endpoints) {
+    const p = parseEndpointEntry(entry);
+    parsed.set(`${p.method} ${p.path}`, p);
+  }
+
+  test.each(inspectPrimitives)("$toolName resolves in the spec", ({ endpoint, summary }) => {
+    const [method, path] = endpoint.split(" ");
+    const result = getOperationDetails(openApiSpec, method, path);
+    expect(result).not.toBeNull();
+    expect(result!.operation.summary).toBe(summary);
+  });
+
+  test.each(inspectPrimitives)("$toolName is allowlisted with the inspect tag", ({ endpoint, toolName }) => {
+    const p = parsed.get(endpoint);
+    expect(p).toBeDefined();
+    expect(p!.toolNameOverride).toBe(toolName);
+    expect(p!.tags).toEqual(["inspect"]);
+  });
+
+  test("no create primitive (POST /v2/preview/tests) is allowlisted", () => {
+    expect(parsed.has("POST /v2/preview/tests")).toBe(false);
+  });
+
+  test("existing get_preview_result remains mapped to the V1 results endpoint", () => {
+    const p = parsed.get("GET /v1/preview/tests/{test_id}/results");
+    expect(p?.toolNameOverride).toBe("get_preview_result");
+    expect(p?.tags).toEqual(["inspect"]);
+  });
+
+  test("required path params are required and query params are optional", () => {
+    const status = getOperationDetails(openApiSpec, "GET", "/v2/preview/tests/{test_id}");
+    const statusSchema = buildParamsSchema(status!.operation, openApiSpec).paramsSchema;
+    expect(statusSchema.test_id).toBeDefined();
+    expect(isOptional(statusSchema.test_id)).toBe(false);
+
+    const list = getOperationDetails(openApiSpec, "GET", "/v2/preview/tests");
+    const listSchema = buildParamsSchema(list!.operation, openApiSpec).paramsSchema;
+    expect(listSchema.results).toBeDefined();
+    expect(isOptional(listSchema.results)).toBe(true);
+
+    const clientResult = getOperationDetails(
+      openApiSpec,
+      "GET",
+      "/v2/preview/tests/{test_id}/results/{client_id}",
+    );
+    const clientSchema = buildParamsSchema(clientResult!.operation, openApiSpec).paramsSchema;
+    expect(isOptional(clientSchema.test_id)).toBe(false);
+    expect(isOptional(clientSchema.client_id)).toBe(false);
+
+    const analyze = getOperationDetails(openApiSpec, "GET", "/v1/inspect/analyze/{test_id}");
+    const analyzeSchema = buildParamsSchema(analyze!.operation, openApiSpec).paramsSchema;
+    expect(isOptional(analyzeSchema.test_id)).toBe(false);
+    expect(analyzeSchema.slug).toBeDefined();
+    expect(isOptional(analyzeSchema.slug)).toBe(true);
+  });
+});
