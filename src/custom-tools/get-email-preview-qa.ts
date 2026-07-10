@@ -58,8 +58,14 @@ export async function runGetEmailPreviewQa(
 }
 
 function defaultDeps(): PollDeps {
-  const request: RequestFn = (method, path) =>
-    makeMailgunRequest(method, path, null, "application/json", PER_REQUEST_TIMEOUT_MS);
+  const request: RequestFn = (method, path, body) =>
+    makeMailgunRequest(
+      method,
+      path,
+      (body as Record<string, unknown> | undefined) ?? null,
+      "application/json",
+      PER_REQUEST_TIMEOUT_MS,
+    );
   return {
     request,
     now: () => Date.now(),
