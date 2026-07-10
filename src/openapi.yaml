@@ -13650,7 +13650,7 @@ paths:
                   #/components/schemas/github.com-mailgun-scaffold-httpapi-GenericAPIError
       security:
         - basicAuth: []
-  /v1/inspect/analyze/{test_id}:
+  /v1/inspect/analyze/{result_id}:
     get:
       tags:
         - Inspect
@@ -13659,12 +13659,16 @@ paths:
         Returns the code-analysis (client compatibility) result for a completed
         check, including per-feature support across client variants. Optional
         filters narrow the returned features. Diagnostic escape hatch; responses
-        may be large.
-      operationId: GET-v1-inspect-analyze--test-id-
+        may be large. NOTE: the path id is the code-analysis RESULT id
+        (content_checking.code_analysis.items.id from the preview test), NOT the
+        preview test id.
+      operationId: GET-v1-inspect-analyze--result-id-
       parameters:
-        - name: test_id
+        - name: result_id
           in: path
-          description: The ID of the code analysis test to check the results for.
+          description: >-
+            The code-analysis result id
+            (content_checking.code_analysis.items.id), not the preview test id.
           required: true
           schema:
             type: string

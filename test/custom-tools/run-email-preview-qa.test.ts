@@ -12,11 +12,11 @@ import {
   CREATE_INVALID_CLIENT_WARNINGS,
   CREATE_MISSING_TEST_ID,
   RENDER_COMPLETE,
-  RENDER_PROCESSING,
   LINK_RESULT,
   IMAGE_RESULT,
   ACCESSIBILITY_RESULT,
   CODE_ANALYSIS_RESULT,
+  CODE_ANALYSIS_PROCESSING,
 } from "../fixtures/email-preview-qa-contract.js";
 
 const CREATE_PATH = "/v2/preview/tests";
@@ -25,13 +25,14 @@ const RESULT_ROUTES: Record<string, unknown> = {
   "/v1/inspect/links/link_001": LINK_RESULT,
   "/v1/inspect/images/image_001": IMAGE_RESULT,
   "/v1/inspect/accessibility/access_001": ACCESSIBILITY_RESULT,
-  "/v1/inspect/analyze/preview_test_001": CODE_ANALYSIS_RESULT,
+  "/v1/inspect/analyze/code_001": CODE_ANALYSIS_RESULT,
 };
 
 interface FakeOpts {
   createResponse?: unknown;
   createError?: unknown;
   status?: unknown | (() => unknown);
+  resultRoutes?: Record<string, unknown>;
 }
 
 function fakeDeps(opts: FakeOpts): {
@@ -53,7 +54,8 @@ function fakeDeps(opts: FakeOpts): {
       if (path === STATUS_PATH) {
         return typeof opts.status === "function" ? (opts.status as () => unknown)() : opts.status;
       }
-      const route = RESULT_ROUTES[path];
+      const routes = opts.resultRoutes ?? RESULT_ROUTES;
+      const route = routes[path];
       if (route === undefined) throw new MailgunApiError("not found", 404);
       return route;
     },
@@ -141,8 +143,8 @@ describe("runCreateAndPoll", () => {
     expect(posts).toHaveLength(1);
     expect(posts[0].path).toBe(CREATE_PATH);
     expect(output.status).toBe("complete");
-    expect(output.issue_counts.total).toBe(5);
-    expect(gets).toContain("/v1/inspect/analyze/preview_test_001");
+    expect(output.issue_counts.total).toBe(6);
+    expect(gets).toContain("/v1/inspect/analyze/code_001");
   });
 
   test("surfaces upstream invalid-client warnings", async () => {
@@ -179,14 +181,26 @@ describe("runCreateAndPoll", () => {
     expect(posts).toHaveLength(1);
   });
 
-  test("timeout returns partial results and never creates a second test", async () => {
-    const { deps, posts } = fakeDeps({ createResponse: CREATE_ALL_CHECKS, status: RENDER_PROCESSING });
+  test("timeout when a check never settles returns partial results, never a second create", async () => {
+    // Render is complete; the code-analysis check stays processing, so the
+    // workflow times out on the check (not the render) and never re-POSTs.
+    const { deps, posts } = fakeDeps({
+      createResponse: CREATE_ALL_CHECKS,
+      status: RENDER_COMPLETE,
+      resultRoutes: {
+        "/v1/inspect/links/link_001": LINK_RESULT,
+        "/v1/inspect/images/image_001": IMAGE_RESULT,
+        "/v1/inspect/accessibility/access_001": ACCESSIBILITY_RESULT,
+        "/v1/inspect/analyze/code_001": CODE_ANALYSIS_PROCESSING,
+      },
+    });
     const output = await runCreateAndPoll(
       validateRunInput({ ...baseInput, timeoutSeconds: 10 }),
       deps,
     );
     expect(output.timed_out).toBe(true);
-    expect(output.status).toBe("processing");
+    expect(output.checks.code_analysis.status).toBe("processing");
+    expect(output.checks.link_validation.status).toBe("complete");
     expect(posts).toHaveLength(1);
     expect(output.data_gaps.map((g) => g.code)).toContain("workflow_timed_out");
   });

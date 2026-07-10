@@ -3,6 +3,8 @@ import {
   normalizeRenderState,
   extractCheckResultIds,
   checkResultPath,
+  detailStatus,
+  isCheckTerminal,
   normalizeCheckLifecycle,
   countLinkValidationIssues,
   countImageValidationIssues,
@@ -17,6 +19,7 @@ import {
   RENDER_COMPLETE,
   RENDER_PROCESSING,
   RENDER_PARTIAL,
+  RENDER_STRAGGLER,
   RENDER_EMPTY,
   RENDER_CHECK_LIFECYCLE,
   RENDER_CHECK_REFERENCE_MISSING,
@@ -24,6 +27,7 @@ import {
   IMAGE_RESULT,
   ACCESSIBILITY_RESULT,
   CODE_ANALYSIS_RESULT,
+  CODE_ANALYSIS_PROCESSING,
 } from "../fixtures/email-preview-qa-contract.js";
 
 describe("normalizeRenderState", () => {
@@ -54,7 +58,7 @@ describe("extractCheckResultIds", () => {
   test("all-checks render exposes every result id", () => {
     const refs = extractCheckResultIds(RENDER_COMPLETE);
     expect(refs.link_validation).toEqual({ requested: true, hasErrors: false, resultId: "link_001" });
-    expect(refs.code_analysis.resultId).toBe("preview_test_001");
+    expect(refs.code_analysis.resultId).toBe("code_001");
   });
 
   test("lifecycle render distinguishes job_failed, not_requested, and missing refs", () => {
@@ -62,7 +66,7 @@ describe("extractCheckResultIds", () => {
     expect(refs.link_validation.resultId).toBe("link_001");
     expect(refs.image_validation).toEqual({ requested: true, hasErrors: true, resultId: null });
     expect(refs.accessibility).toEqual({ requested: false, hasErrors: false, resultId: null });
-    expect(refs.code_analysis.resultId).toBe("analyze_pending");
+    expect(refs.code_analysis.resultId).toBe("code_pending");
   });
 
   test("missing reference is requested with a null result id", () => {
@@ -83,31 +87,61 @@ describe("checkResultPath builds allowlisted paths", () => {
   });
 });
 
+describe("detailStatus reads the check's own meta.status (case-insensitive)", () => {
+  test("Completed / Complete are complete", () => {
+    expect(detailStatus(LINK_RESULT)).toBe("complete");
+    expect(detailStatus(IMAGE_RESULT)).toBe("complete");
+  });
+  test("Processing is processing", () => {
+    expect(detailStatus(CODE_ANALYSIS_PROCESSING)).toBe("processing");
+  });
+  test("missing meta is treated as complete (payload materialized)", () => {
+    expect(detailStatus({})).toBe("complete");
+  });
+});
+
+describe("isCheckTerminal drives polling independently of render", () => {
+  const ref: CheckReference = { requested: true, hasErrors: false, resultId: "x" };
+  test("complete detail payload is terminal", () => {
+    expect(isCheckTerminal(ref, { status: "ok", payload: LINK_RESULT })).toBe(true);
+  });
+  test("processing detail payload is not terminal", () => {
+    expect(isCheckTerminal(ref, { status: "ok", payload: CODE_ANALYSIS_PROCESSING })).toBe(false);
+  });
+  test("not requested is terminal; missing reference is not", () => {
+    expect(isCheckTerminal({ requested: false, hasErrors: false, resultId: null }, { status: "not_fetched" })).toBe(true);
+    expect(isCheckTerminal({ requested: true, hasErrors: false, resultId: null }, { status: "not_fetched" })).toBe(false);
+  });
+});
+
 describe("normalizeCheckLifecycle", () => {
   const requested: CheckReference = { requested: true, hasErrors: false, resultId: "x" };
   test("not requested", () => {
     expect(
-      normalizeCheckLifecycle({ requested: false, hasErrors: false, resultId: null }, { status: "not_fetched" }, true),
+      normalizeCheckLifecycle({ requested: false, hasErrors: false, resultId: null }, { status: "not_fetched" }, false),
     ).toBe("not_requested");
   });
   test("job failed", () => {
     expect(
-      normalizeCheckLifecycle({ requested: true, hasErrors: true, resultId: null }, { status: "not_fetched" }, true),
+      normalizeCheckLifecycle({ requested: true, hasErrors: true, resultId: null }, { status: "not_fetched" }, false),
     ).toBe("job_failed");
   });
-  test("complete when fetched ok", () => {
-    expect(normalizeCheckLifecycle(requested, { status: "ok", payload: {} }, true)).toBe("complete");
+  test("complete when fetched ok and detail is complete", () => {
+    expect(normalizeCheckLifecycle(requested, { status: "ok", payload: LINK_RESULT }, false)).toBe("complete");
+  });
+  test("processing when fetched ok but detail still processing", () => {
+    expect(normalizeCheckLifecycle(requested, { status: "ok", payload: CODE_ANALYSIS_PROCESSING }, false)).toBe("processing");
   });
   test("unavailable on 404", () => {
-    expect(normalizeCheckLifecycle(requested, { status: "not_found" }, true)).toBe("unavailable");
+    expect(normalizeCheckLifecycle(requested, { status: "not_found" }, false)).toBe("unavailable");
   });
-  test("processing when render unsettled and not yet fetched", () => {
+  test("processing when referenced but not fetched by the deadline", () => {
     expect(normalizeCheckLifecycle(requested, { status: "not_fetched" }, false)).toBe("processing");
   });
-  test("missing result id is unavailable", () => {
-    expect(
-      normalizeCheckLifecycle({ requested: true, hasErrors: false, resultId: null }, { status: "not_fetched" }, true),
-    ).toBe("unavailable");
+  test("missing result id: unavailable normally, processing at a timeout", () => {
+    const missing: CheckReference = { requested: true, hasErrors: false, resultId: null };
+    expect(normalizeCheckLifecycle(missing, { status: "not_fetched" }, false)).toBe("unavailable");
+    expect(normalizeCheckLifecycle(missing, { status: "not_fetched" }, true)).toBe("processing");
   });
 });
 
@@ -128,22 +162,24 @@ describe("issue counters trace to V2 fields", () => {
     expect(c.by_severity).toEqual({ moderate: 1 });
   });
 
-  test("accessibility keeps failures and needs_review separate", () => {
+  test("accessibility counts instances (headline) and rules (secondary)", () => {
     const c = countAccessibilityIssues(ACCESSIBILITY_RESULT);
-    expect(c.failures).toBe(2);
+    expect(c.failures).toBe(3);
+    expect(c.failure_rules).toBe(2);
     expect(c.needs_review).toBe(1);
-    expect(c.failures_by_severity).toEqual({ serious: 1, critical: 1 });
+    expect(c.needs_review_rules).toBe(1);
+    expect(c.failures_by_severity).toEqual({ serious: 2, critical: 1 });
     expect(c.needs_review_by_severity).toEqual({ moderate: 1 });
   });
 
-  test("code analysis counts instances/support and flags an unconfirmed formula", () => {
+  test("code analysis uses meta.count and passes support aggregates through", () => {
     const c = countCodeAnalysisIssues(CODE_ANALYSIS_RESULT);
-    expect(c.issues).toBe(3);
-    expect(c.by_feature).toEqual({ "font-size": 2, "target-attribute": 1 });
-    expect(c.by_support_type).toEqual({ y: 3, a: 1, n: 2, u: 1 });
-    expect(c.by_client).toEqual({ outlook_win: 2, lotus_notes: 1 });
-    expect(c.by_application).toEqual({});
-    expect(c.formula_unconfirmed).toBe(true);
+    expect(c.count).toBe(2);
+    expect(c.instances).toBe(3);
+    expect(c.by_feature).toEqual({ "html-width": 2, "target-attribute": 1 });
+    expect(c.application_support).toEqual(CODE_ANALYSIS_RESULT.meta.application_support);
+    expect(c.inbox_provider_support).toEqual(CODE_ANALYSIS_RESULT.meta.inbox_provider_support);
+    expect(c.market_support).toEqual(CODE_ANALYSIS_RESULT.meta.market_support);
   });
 });
 
@@ -170,15 +206,41 @@ describe("buildEmailPreviewQaOutput", () => {
     expect(output.summary).toEqual({ total_clients: 3, completed: 3, processing: 0, bounced: 0 });
     expect(output.checks.link_validation.status).toBe("complete");
     expect(output.checks.link_validation.result_id).toBe("link_001");
+    expect(output.checks.accessibility.failures).toBe(3);
     expect(output.checks.accessibility.needs_review).toBe(1);
-    expect(output.issue_counts.total).toBe(5);
+    expect(output.checks.code_analysis.count).toBe(2);
+    expect(output.checks.code_analysis.instances).toBe(3);
+    expect(output.issue_counts.total).toBe(6);
     expect(output.issue_counts.by_check).toEqual({
       link_validation: 2,
       image_validation: 1,
-      accessibility: 2,
+      accessibility: 3,
     });
-    expect(output.issue_counts.by_severity).toEqual({ critical: 2, unknown: 1, moderate: 1, serious: 1 });
-    expect(output.data_gaps.map((g) => g.code)).toContain("code_analysis_count_formula_unsupported");
+    expect(output.issue_counts.by_severity).toEqual({ critical: 2, unknown: 1, moderate: 1, serious: 2 });
+    // The code-analysis formula gate is resolved (meta.count); no such data gap.
+    expect(output.data_gaps.map((g) => g.code)).not.toContain("code_analysis_count_formula_unsupported");
+    expect(output.data_gaps).toHaveLength(0);
+  });
+
+  test("render straggler does not block; reported as render_incomplete", () => {
+    const refs = extractCheckResultIds(RENDER_STRAGGLER);
+    const output = buildEmailPreviewQaOutput({
+      testId: "preview_test_001",
+      render: RENDER_STRAGGLER,
+      refs,
+      fetches: {
+        link_validation: okFetch(LINK_RESULT),
+        image_validation: okFetch(IMAGE_RESULT),
+        accessibility: okFetch(ACCESSIBILITY_RESULT),
+        code_analysis: okFetch(CODE_ANALYSIS_RESULT),
+      },
+      timedOut: false,
+    });
+    expect(output.timed_out).toBe(false);
+    expect(output.summary.processing).toBe(1);
+    expect(output.checks.link_validation.status).toBe("complete");
+    expect(output.data_gaps.map((g) => g.code)).toContain("render_incomplete");
+    expect(output.data_gaps.map((g) => g.code)).not.toContain("workflow_timed_out");
   });
 
   test("missing reference yields unavailable lifecycle + data gap", () => {
@@ -200,7 +262,7 @@ describe("buildEmailPreviewQaOutput", () => {
     expect(output.data_gaps.map((g) => g.code)).toContain("check_reference_missing");
   });
 
-  test("timeout adds a workflow_timed_out data gap", () => {
+  test("timeout (a check never settled) adds workflow_timed_out", () => {
     const refs = extractCheckResultIds(RENDER_PROCESSING);
     const output = buildEmailPreviewQaOutput({
       testId: "preview_test_005",
