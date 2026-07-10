@@ -201,7 +201,7 @@ export const endpoints: readonly EndpointEntry[] = [
     tags: ["inspect"],
   },
   {
-    endpoint: "GET /v1/inspect/analyze/{test_id}",
+    endpoint: "GET /v1/inspect/analyze/{result_id}",
     toolName: "get_code_analysis_result",
     tags: ["inspect"],
   },

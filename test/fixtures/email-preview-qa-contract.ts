@@ -1,4 +1,4 @@
-// Shared Email Preview QA contract fixtures (G0).
+// Shared Email Preview QA contract fixtures (G0, revised after live validation).
 //
 // This file is intentionally byte-identical between `mailgun-mcp-server`
 // (test/fixtures/email-preview-qa-contract.ts) and `mailgun-cli`
@@ -9,32 +9,29 @@
 // It is dependency-free (plain object literals, no imports) so it can be
 // consumed by Vitest (MCP) and node:test (CLI) without adapter shims.
 //
-// Shapes are grounded in the confirmed V2 contract
-// (mailgun-inspect-openapi-jun2026.json). Values are synthetic and safe to
-// commit; no live credentials or real customer content.
+// Shapes are grounded in REAL V2 responses captured from a live US demo account
+// on 2026-07-10 (test 8Tl32…). Values are synthetic/trimmed and safe to commit;
+// no live credentials or real customer content.
 //
-// Scenario index (spec §16.1):
-//   1  CREATE_ALL_CHECKS                 create accepted, all four checks
-//   2  CREATE_DEFAULT_CLIENTS            create accepted, default clients (no reference_id)
-//   3  CREATE_INVALID_CLIENT_WARNINGS    create accepted with invalid-client warnings
-//   4  RENDER_COMPLETE                   render complete
-//   5  RENDER_PROCESSING                 render still processing
-//   6  RENDER_PARTIAL                    render partial (a client bounced)
-//   7  RENDER_EMPTY                      empty/unknown render arrays
-//   8  LINK_RESULT                       link results (passes/failures/informational + impacts)
-//   9  IMAGE_RESULT                      image results (passes/failures/informational + impacts)
-//   10 ACCESSIBILITY_RESULT              accessibility (failures + needs_review + impacts)
-//   11 CODE_ANALYSIS_RESULT              code analysis (feature/support/variant breakdowns)
-//   12 CHECK_LIFECYCLE_*                 processing / complete / job_failed / unavailable
-//   13 RENDER_CHECK_REFERENCE_MISSING    requested check reference missing
-//   14 CHECK_RESULT_404                  unexpected structured-check 404 (behavioral marker)
-//   15 POLL_DEADLINE_REACHED             poll deadline reached (behavioral marker)
-//   16 CREATE_MISSING_TEST_ID            create response missing a test id
-//   17 AMBIGUOUS_CREATE_TRANSPORT_FAILURE ambiguous create transport failure (behavioral marker)
-//   18 API_ERROR_401 / _403 / _429 / _5XX  API error bodies
-//
-// Behavioral markers (14, 15, 17) carry no upstream payload; they are named
-// scenario descriptors both repos reference so the poll/error tests stay aligned.
+// Validated contract facts baked into these fixtures:
+//   - Each structured-check detail payload carries meta.status, with INCONSISTENT
+//     casing across checks ("Completed" vs "Complete"); matching must be
+//     case-insensitive prefix. The render/status endpoint's per-check meta.status
+//     can be STALE, so lifecycle is driven off the DETAIL payload, not the status
+//     endpoint.
+//   - Content checks complete independently of per-client rendering. A single
+//     slow/stuck client keeps the render "processing" (potentially forever), so
+//     completion is driven by the CHECKS, not the render. Stragglers are reported
+//     per-client + a non-fatal render_incomplete data gap (mirrors the Inspect UI,
+//     which marks missing clients rather than blocking the whole result).
+//   - Code analysis exposes an authoritative meta.count (== number of features)
+//     plus meta.application_support / inbox_provider_support / market_support.
+//     meta.count is the canonical total (NOT the instance sum).
+//   - The analyze detail endpoint is keyed by the code_analysis result_id
+//     (content_checking.code_analysis.items.id), NOT the test_id.
+//   - Accessibility failures/needs_review are grouped by RULE, each carrying an
+//     instances[] array. The headline count is INSTANCES; rule counts are kept
+//     as a secondary field.
 
 // ---------------------------------------------------------------------------
 // Client ids reused across fixtures.
@@ -57,7 +54,7 @@ const CHECK_REFS_ALL = {
   link_validation: { items: { id: 'link_001', links: { self: '/v1/inspect/links/link_001' } } },
   image_validation: { items: { id: 'image_001', links: { self: '/v1/inspect/images/image_001' } } },
   accessibility: { items: { id: 'access_001', links: { self: '/v1/inspect/accessibility/access_001' } } },
-  code_analysis: { items: { id: 'preview_test_001', links: { self: '/v1/inspect/analyze/preview_test_001' } } }
+  code_analysis: { items: { id: 'code_001', links: { self: '/v1/inspect/analyze/code_001' } } }
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -110,7 +107,8 @@ export const RENDER_COMPLETE = {
   content_checking: CHECK_REFS_ALL
 } as const;
 
-// 5. Render processing: at least one client still processing.
+// 5. Render processing: at least one client still processing. Under the revised
+// model this does NOT block completion — checks drive it.
 export const RENDER_PROCESSING = {
   subject: 'June campaign',
   date: 1782309720,
@@ -130,6 +128,18 @@ export const RENDER_PARTIAL = {
   content_checking: CHECK_REFS_ALL
 } as const;
 
+// 6b. Render straggler: most clients done, one stuck "processing" indefinitely,
+// while all checks are complete. The workflow must return non-blocked, report the
+// straggler per-client, and emit a render_incomplete data gap (mirrors the UI).
+export const RENDER_STRAGGLER = {
+  subject: 'June campaign',
+  date: 1782309720,
+  completed: [CLIENT_IDS.gmail, CLIENT_IDS.outlook],
+  processing: [CLIENT_IDS.apple],
+  bounced: [],
+  content_checking: CHECK_REFS_ALL
+} as const;
+
 // 7. Empty/unknown render arrays -> status "unknown" + data gap.
 export const RENDER_EMPTY = {
   subject: 'June campaign',
@@ -140,8 +150,8 @@ export const RENDER_EMPTY = {
   content_checking: {}
 } as const;
 
-// 13. Render complete, but a requested check reference is missing (items with
-// neither id nor self) -> lifecycle "unavailable" + data gap.
+// 13. A requested check reference is missing (items with neither id nor self)
+// -> lifecycle "unavailable" + data gap. accessibility not requested (null).
 export const RENDER_CHECK_REFERENCE_MISSING = {
   subject: 'June campaign',
   date: 1782309720,
@@ -152,14 +162,16 @@ export const RENDER_CHECK_REFERENCE_MISSING = {
     link_validation: { items: { id: 'link_010', links: { self: '/v1/inspect/links/link_010' } } },
     image_validation: { items: {} },
     accessibility: null,
-    code_analysis: { items: { id: 'preview_test_013', links: { self: '/v1/inspect/analyze/preview_test_013' } } }
+    code_analysis: { items: { id: 'code_013', links: { self: '/v1/inspect/analyze/code_013' } } }
   }
 } as const;
 
-// 12. Check-lifecycle render variants keyed to the five normalized states.
-//   not_requested -> null; processing -> reference present but result pending;
-//   complete -> reference present + terminal result; job_failed -> errors[];
-//   unavailable -> reference missing / 404 on the result endpoint.
+// 12. Check-lifecycle render variant. Lifecycle is now derived from the DETAIL
+// payload's meta.status, not this node; this fixture only supplies references.
+//   link_validation -> complete (resolves to LINK_RESULT)
+//   image_validation -> job_failed (errors[] present on the check node)
+//   accessibility    -> not_requested (null)
+//   code_analysis    -> processing (detail resolves to CODE_ANALYSIS_PROCESSING)
 export const RENDER_CHECK_LIFECYCLE = {
   subject: 'June campaign',
   date: 1782309720,
@@ -167,28 +179,26 @@ export const RENDER_CHECK_LIFECYCLE = {
   processing: [],
   bounced: [],
   content_checking: {
-    // complete: full reference; result resolves to LINK_RESULT.
     link_validation: { items: { id: 'link_001', links: { self: '/v1/inspect/links/link_001' } } },
-    // job_failed: the check job errored out (not the same as an email QA failure).
     image_validation: {
       errors: [{ status: '500', title: 'processing_error', detail: 'Image validation job failed to execute.' }]
     },
-    // not_requested: caller did not enable this check.
     accessibility: null,
-    // processing/unavailable: reference present but result endpoint returns 404
-    // while materializing (see CHECK_RESULT_404).
-    code_analysis: { items: { id: 'analyze_pending', links: { self: '/v1/inspect/analyze/analyze_pending' } } }
+    code_analysis: { items: { id: 'code_pending', links: { self: '/v1/inspect/analyze/code_pending' } } }
   }
 } as const;
 
 // ---------------------------------------------------------------------------
 // Structured-check detail results.
+// Each carries meta.status; casing is intentionally inconsistent across checks
+// to match the real API and exercise case-insensitive matching.
 // ---------------------------------------------------------------------------
 
-// 8. Link validation: passes/failures/informational with native impacts.
-// Includes one failure with a missing impact to exercise the "unknown" bucket.
+// 8. Link validation (GET /v1/inspect/links/{id}). meta.status "Completed".
+// Expected normalized counts: passes 2, failures 2 (critical 1, unknown 1),
+// informational 1.
 export const LINK_RESULT = {
-  meta: null,
+  meta: { status: 'Completed' },
   items: {
     id: 'link_001',
     links: { self: '/v1/inspect/links/link_001' },
@@ -200,23 +210,23 @@ export const LINK_RESULT = {
         line: 12,
         column: 4,
         passes: [
-          { id: 'lp1', rule: 'reachable', description: 'Link resolved with 200.', impact: 'informational', details: [] },
-          { id: 'lp2', rule: 'https', description: 'Link uses HTTPS.', impact: 'informational', details: [] }
+          { id: 'lp1', rule: 'reachable', description: 'Link resolved with 200.', details: [] },
+          { id: 'lp2', rule: 'https', description: 'Link uses HTTPS.', details: [] }
         ],
         failures: [],
         informational: [
-          { id: 'li1', rule: 'redirect', description: 'Link redirected once.', impact: 'informational', details: [] }
+          { id: 'li1', rule: 'redirect', description: 'Link redirected once.', details: [] }
         ]
       },
       {
         url: 'https://example.com/broken',
-        status: 'fail',
+        status: 'Error',
         status_code: 404,
         line: 20,
         column: 6,
         passes: [],
         failures: [
-          { id: 'lf1', rule: 'reachable', description: 'Link returned 404.', impact: 'critical', details: [] },
+          { id: 'lf1', rule: 'Broken Link', description: 'Link returned 404.', impact: 'critical', details: [] },
           // Missing impact -> counts under "unknown" severity.
           { id: 'lf2', rule: 'tracking', description: 'Untracked link.', details: [] }
         ],
@@ -226,9 +236,11 @@ export const LINK_RESULT = {
   }
 } as const;
 
-// 9. Image validation: passes/failures/informational with native impacts.
+// 9. Image validation (GET /v1/inspect/images/{id}). meta.status "Complete"
+// (different casing on purpose). Expected: passes 1, failures 1 (moderate 1),
+// informational 1.
 export const IMAGE_RESULT = {
-  meta: null,
+  meta: { status: 'Complete' },
   items: {
     id: 'image_001',
     total_load_time_ms: 820,
@@ -236,21 +248,21 @@ export const IMAGE_RESULT = {
       {
         id: 'img1',
         url: 'https://example.com/hero.png',
-        status: 'pass',
+        status: 'Valid',
         line: 30,
         column: 2,
         passes: [
-          { id: 'ip1', rule: 'has-alt', description: 'Image has alt text.', impact: 'informational', details: [] }
+          { id: 'ip1', rule: 'has-alt', description: 'Image has alt text.', details: [] }
         ],
         failures: [],
         informational: [
-          { id: 'ii1', rule: 'dimensions', description: 'Width/height not set.', impact: 'informational', details: [] }
+          { id: 'ii1', rule: 'dimensions', description: 'Width/height not set.', details: [] }
         ]
       },
       {
         id: 'img2',
         url: 'https://example.com/logo.gif',
-        status: 'fail',
+        status: 'Invalid',
         line: 44,
         column: 8,
         passes: [],
@@ -263,49 +275,53 @@ export const IMAGE_RESULT = {
   }
 } as const;
 
-// 10. Accessibility: failures and needs_review kept separate, with impacts.
+// 10. Accessibility (GET /v1/inspect/accessibility/{id}). meta.status "Completed".
+// Failures/needs_review are grouped by RULE, each with an instances[] array.
+// Expected (INSTANCE-level headline): failures 3 (serious 2, critical 1),
+// failure_rules 2; needs_review 1 (moderate 1), needs_review_rules 1.
 export const ACCESSIBILITY_RESULT = {
-  meta: null,
+  meta: { status: 'Completed', created_at: '2026-07-10T20:16:22.663Z', updated_at: '2026-07-10T20:16:24.956Z' },
   items: [
     {
-      checks: 24,
+      checks: 34,
       passes: [
-        { rule: 'document-title', impact: 'minor', description: 'Document has a title.', standards: ['WCAG2A'], pour: ['perceivable'], compliance: ['A'], instances: [] }
+        { rule: 'Document Title', description: 'Document has a title.', standards: ['WCAG 2A'], pour: ['Operable'], compliance: ['2.4.2 Page Titled'] }
       ],
       failures: [
         {
-          rule: 'color-contrast',
+          rule: 'Color Contrast',
           impact: 'serious',
           description: 'Text has insufficient contrast.',
-          standards: ['WCAG2AA'],
-          pour: ['perceivable'],
-          compliance: ['AA'],
+          standards: ['WCAG 2AA'],
+          pour: ['Perceivable'],
+          compliance: ['1.4.3 Contrast (Minimum)'],
           instances: [
-            { correctAny: [], correctAll: [], snippet: '<p style="color:#aaa">', target: ['p'], lineNumber: 55, absoluteIndex: 1200 }
+            { correctAny: ['insufficient contrast 1.09'], correctAll: [], snippet: '<h1 style="color:#fff2f0">', target: ['h1'], lineNumber: 20, absoluteIndex: 16 },
+            { correctAny: ['insufficient contrast 1.42'], correctAll: [], snippet: '<p style="color:#d8d8d8">', target: ['p'], lineNumber: 21, absoluteIndex: 17 }
           ]
         },
         {
-          rule: 'image-alt',
+          rule: 'Image Alt',
           impact: 'critical',
           description: 'Image missing alt attribute.',
-          standards: ['WCAG2A'],
-          pour: ['perceivable'],
-          compliance: ['A'],
+          standards: ['WCAG 2A'],
+          pour: ['Perceivable'],
+          compliance: ['1.1.1 Non-text Content'],
           instances: [
-            { correctAny: [], correctAll: [], snippet: '<img src="logo.gif">', target: ['img'], lineNumber: 44, absoluteIndex: 980 }
+            { correctAny: ['no alt attribute'], correctAll: [], snippet: '<img src="logo.gif">', target: ['img'], lineNumber: 44, absoluteIndex: 25 }
           ]
         }
       ],
       needs_review: [
         {
-          rule: 'link-name',
+          rule: 'Link Name',
           impact: 'moderate',
           description: 'Link text may not be descriptive.',
-          standards: ['WCAG2A'],
-          pour: ['operable'],
-          compliance: ['A'],
+          standards: ['WCAG 2A'],
+          pour: ['Operable'],
+          compliance: ['4.1.2 Name, Role, Value'],
           instances: [
-            { correctAny: [], correctAll: [], snippet: '<a href="#">here</a>', target: ['a'], lineNumber: 60, absoluteIndex: 1400 }
+            { correctAny: ['ambiguous link text'], correctAll: [], snippet: '<a href="#">here</a>', target: ['a'], lineNumber: 60, absoluteIndex: 40 }
           ]
         }
       ]
@@ -313,31 +329,44 @@ export const ACCESSIBILITY_RESULT = {
   ]
 } as const;
 
-// 11. Code analysis: features with support buckets (y=yes, a=partial, n=no,
-// u=unknown) referencing client/variant ids. Application counts require the
-// analyze dictionary (parked release gate) -> normalizers must emit a data gap
-// rather than inventing application totals.
+// 11. Code analysis (GET /v1/inspect/analyze/{result_id}). meta carries the
+// authoritative count + support aggregates. Expected: count 2 (== features),
+// instances 3, by_feature { 'html-width': 2, 'target-attribute': 1 }.
 export const CODE_ANALYSIS_RESULT = {
-  meta: null,
+  meta: {
+    status: 'Completed',
+    version: 1,
+    count: 2,
+    application_support: {
+      desktop: { supported: 1, partial_support: 1, unsupported: 0, unknown: 0 },
+      mobile: { supported: 2, partial_support: 0, unsupported: 0, unknown: 0 },
+      web: { supported: 1, partial_support: 0, unsupported: 1, unknown: 0 }
+    },
+    inbox_provider_support: {
+      apple_mail: { supported: 2, partial_support: 0, unsupported: 0, unknown: 0 },
+      gmail: { supported: 1, partial_support: 1, unsupported: 0, unknown: 0 },
+      outlook: { supported: 0, partial_support: 1, unsupported: 1, unknown: 0 }
+    },
+    market_support: { supported: 1, partial_support: 1, unsupported: 0, unknown: 0 }
+  },
   items: {
-    id: 'preview_test_001',
+    id: 'code_001',
     version: 1,
     features: [
       {
-        slug: 'font-size',
-        name: 'font-size',
-        description: 'CSS font-size property',
-        category: 'css-properties',
+        slug: 'html-width',
+        name: 'width attribute',
+        description: 'HTML width attribute',
+        category: 'html-attributes',
         notes_lookup: {},
         instances: [
-          { id: 'fs1', line: 10, column: 3, resolved: false },
-          { id: 'fs2', line: 22, column: 5, resolved: false }
+          { id: 'w1', line: 14, column: 17, resolved: false },
+          { id: 'w2', line: 32, column: 19, resolved: false }
         ],
         support: {
           y: [{ id: 'gmail_chrome', notes: [] }, { id: 'apple_mail', notes: [] }],
           a: [{ id: 'outlook_win', notes: ['partial in Word engine'] }],
-          n: [{ id: 'lotus_notes', notes: [] }],
-          u: []
+          n: [{ id: 'lotus_notes', notes: [] }]
         }
       },
       {
@@ -346,7 +375,7 @@ export const CODE_ANALYSIS_RESULT = {
         description: 'Anchor target attribute',
         category: 'html-attributes',
         notes_lookup: {},
-        instances: [{ id: 'ta1', line: 60, column: 8, resolved: false }],
+        instances: [{ id: 't1', line: 60, column: 8, resolved: false }],
         support: {
           y: [{ id: 'gmail_chrome', notes: [] }],
           a: [],
@@ -356,6 +385,13 @@ export const CODE_ANALYSIS_RESULT = {
       }
     ]
   }
+} as const;
+
+// 11b. Code analysis still processing (detail endpoint returns meta.status
+// "Processing" with no final counts) -> lifecycle "processing", counts 0.
+export const CODE_ANALYSIS_PROCESSING = {
+  meta: { status: 'Processing', version: 1 },
+  items: { id: 'code_pending', version: 1, features: [] }
 } as const;
 
 // Per-client render result (GET /v2/preview/tests/{test_id}/results/{client_id}).
@@ -400,22 +436,23 @@ export const API_ERROR_5XX = { message: 'Internal server error' } as const;
 // poll/timeout/ambiguity tests describe the same scenario.
 // ---------------------------------------------------------------------------
 
-// 14. Unexpected structured-check 404: a referenced result endpoint returns 404
-// while materializing. Treat as unavailable + data gap; do NOT retry-on-404
-// unless Inspect confirms it as a supported contract (spec §11.5, release gate).
+// 14. Unexpected structured-check 404: a referenced result endpoint returns 404.
+// Treat as unavailable + data gap; do NOT retry-on-404 unless Inspect confirms it
+// as a supported contract (spec §11.5, release gate).
 export const CHECK_RESULT_404 = {
   scenario: 'unexpected_structured_check_404',
   status_code: 404,
-  path: '/v1/inspect/analyze/analyze_pending',
+  path: '/v1/inspect/analyze/code_pending',
   expected_lifecycle: 'unavailable',
   expected_data_gap_code: 'result_endpoint_unavailable'
 } as const;
 
-// 15. Poll deadline reached: render stays processing until the workflow deadline.
-// Return latest evidence with timed_out=true; never create a second test.
+// 15. Poll deadline reached: a CHECK stays processing until the workflow deadline
+// (render stragglers do NOT cause a timeout). Return latest evidence with
+// timed_out=true; never create a second test.
 export const POLL_DEADLINE_REACHED = {
   scenario: 'poll_deadline_reached',
-  render_snapshot: 'RENDER_PROCESSING',
+  check_snapshot: 'CODE_ANALYSIS_PROCESSING',
   expected_timed_out: true,
   expected_data_gap_code: 'workflow_timed_out'
 } as const;

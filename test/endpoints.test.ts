@@ -230,7 +230,7 @@ describe("Inspect email preview QA read primitives", () => {
       summary: "Get Accessibility Test",
     },
     {
-      endpoint: "GET /v1/inspect/analyze/{test_id}",
+      endpoint: "GET /v1/inspect/analyze/{result_id}",
       toolName: "get_code_analysis_result",
       summary: "Get Code Analysis Results",
     },
@@ -286,9 +286,9 @@ describe("Inspect email preview QA read primitives", () => {
     expect(isOptional(clientSchema.test_id)).toBe(false);
     expect(isOptional(clientSchema.client_id)).toBe(false);
 
-    const analyze = getOperationDetails(openApiSpec, "GET", "/v1/inspect/analyze/{test_id}");
+    const analyze = getOperationDetails(openApiSpec, "GET", "/v1/inspect/analyze/{result_id}");
     const analyzeSchema = buildParamsSchema(analyze!.operation, openApiSpec).paramsSchema;
-    expect(isOptional(analyzeSchema.test_id)).toBe(false);
+    expect(isOptional(analyzeSchema.result_id)).toBe(false);
     expect(analyzeSchema.slug).toBeDefined();
     expect(isOptional(analyzeSchema.slug)).toBe(true);
   });
