@@ -340,6 +340,39 @@ export function normalizeWarnings(create: unknown): PreviewWarning[] {
   });
 }
 
+// --- Create request (used by the run composite) ---
+
+export interface PreviewCreateInput {
+  subject: string;
+  html: string;
+  clients?: readonly string[];
+  // Which structured checks to enable. Defaults to all four when undefined; an
+  // empty array means "no checks".
+  contentChecks?: readonly CheckName[];
+  referenceId?: string;
+}
+
+// Build the JSON body for POST /v2/preview/tests. Only the HTML source is used
+// (spec §9.1). `clients` is omitted when absent, `content_checking` always sends
+// explicit booleans for all four checks, and `reference_id` is omitted when
+// absent (spec §10).
+export function buildPreviewCreateRequest(input: PreviewCreateInput): Record<string, unknown> {
+  const body: Record<string, unknown> = { subject: input.subject, html: input.html };
+  if (input.clients && input.clients.length > 0) body.clients = [...input.clients];
+
+  const requested = input.contentChecks ?? CHECK_NAMES;
+  const contentChecking: Record<string, boolean> = {};
+  for (const name of CHECK_NAMES) contentChecking[name] = requested.includes(name);
+  body.content_checking = contentChecking;
+
+  if (input.referenceId) body.reference_id = input.referenceId;
+  return body;
+}
+
+export function extractCreatedTestId(created: unknown): string | null {
+  return str(asRecord(created).id);
+}
+
 // --- Output builder (pure) ---
 
 export interface BuildOutputParams {
@@ -527,7 +560,7 @@ export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPrevi
 
 // --- Polling orchestration (I/O injected for deterministic tests) ---
 
-export type RequestFn = (method: string, path: string) => Promise<unknown>;
+export type RequestFn = (method: string, path: string, body?: unknown) => Promise<unknown>;
 
 export interface PollDeps {
   request: RequestFn;
