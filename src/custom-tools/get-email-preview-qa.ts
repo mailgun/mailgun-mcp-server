@@ -1,21 +1,31 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { makeMailgunRequest, MailgunApiError } from "../api.js";
+import { MailgunApiError } from "../api.js";
 import { META_TAGS_KEY, type Tag } from "../tags.js";
 import {
   buildEmailPreviewQaOutput,
   pollEmailPreviewQa,
   type EmailPreviewQaOutput,
   type PollDeps,
-  type RequestFn,
 } from "./email-preview-qa.js";
+import {
+  createDefaultDeps,
+  DEFAULT_TIMEOUT_SECONDS,
+  InvalidTimeoutError,
+  MAX_TIMEOUT_SECONDS,
+  resolveTimeoutSeconds,
+  timeoutSecondsSchema,
+} from "./email-preview-qa-runtime.js";
 
 // The READ/RESUME composite: polls an existing test id, fetches the referenced
 // check results, and returns the same summary. Never creates a test.
-
-const DEFAULT_TIMEOUT_SECONDS = 120;
-const MAX_TIMEOUT_SECONDS = 600;
-const PER_REQUEST_TIMEOUT_MS = 30_000;
+//
+// Limitation: the status API does not report which content checks or clients were
+// requested at create time. This tool therefore cannot flag a not-requested check
+// as "not_requested" from an absent property (it treats an absent content_checking
+// property as still-pending, never terminating after a single read), and it cannot
+// emit a requested_client_missing data gap. Explicit null checks are still reported
+// as not_requested. Use run_email_preview_qa when that provenance matters.
 
 export interface GetEmailPreviewQaParams {
   testId: string;
@@ -31,19 +41,14 @@ export interface GetEmailPreviewQaError {
   };
 }
 
-function clampTimeoutSeconds(value: number | undefined): number {
-  if (value === undefined || Number.isNaN(value)) return DEFAULT_TIMEOUT_SECONDS;
-  if (value < 0) return 0;
-  if (value > MAX_TIMEOUT_SECONDS) return MAX_TIMEOUT_SECONDS;
-  return value;
-}
-
-// Core workflow with I/O injected. Exported for deterministic tests.
+// Core workflow with I/O injected. Exported for deterministic tests. Throws
+// InvalidTimeoutError (before any request) when timeout_seconds is out of contract.
 export async function runGetEmailPreviewQa(
   params: GetEmailPreviewQaParams,
   deps: PollDeps,
 ): Promise<EmailPreviewQaOutput> {
-  const timeoutMs = clampTimeoutSeconds(params.timeoutSeconds) * 1000;
+  const timeoutMs = resolveTimeoutSeconds(params.timeoutSeconds) * 1000;
+  // No requestedChecks: the resume path cannot recover the create-time selection.
   const poll = await pollEmailPreviewQa({ testId: params.testId, timeoutMs }, deps);
   return buildEmailPreviewQaOutput({
     testId: params.testId,
@@ -52,22 +57,6 @@ export async function runGetEmailPreviewQa(
     fetches: poll.fetches,
     timedOut: poll.timedOut,
   });
-}
-
-function defaultDeps(): PollDeps {
-  const request: RequestFn = (method, path, body) =>
-    makeMailgunRequest(
-      method,
-      path,
-      (body as Record<string, unknown> | undefined) ?? null,
-      "application/json",
-      PER_REQUEST_TIMEOUT_MS,
-    );
-  return {
-    request,
-    now: () => Date.now(),
-    sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
-  };
 }
 
 function buildErrorResponse(
@@ -86,13 +75,12 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
       description:
         "Resume and summarize an existing email preview QA test. Polls the render status of a test id until it settles (or the timeout is reached), retrieves the requested structured-check results (links, images, accessibility, code analysis), and returns counts and result references. Does not create a test; use run_email_preview_qa to create one.",
       inputSchema: {
-        test_id: z.string().describe("The id of an existing email preview test to resume and summarize."),
-        timeout_seconds: z
-          .number()
-          .optional()
-          .describe(
-            `How long to poll for the render/checks to settle, in seconds (0-${MAX_TIMEOUT_SECONDS}, default ${DEFAULT_TIMEOUT_SECONDS}). On timeout the partial summary is returned with timed_out=true; resume with the same test id.`,
-          ),
+        test_id: z
+          .string()
+          .describe("The id of an existing email preview test to resume and summarize."),
+        timeout_seconds: timeoutSecondsSchema.describe(
+          `How long to poll for the render/checks to settle, in whole seconds (integer 0-${MAX_TIMEOUT_SECONDS}, default ${DEFAULT_TIMEOUT_SECONDS}). On timeout the partial summary is returned with timed_out=true; resume with the same test id.`,
+        ),
       },
       _meta: { [META_TAGS_KEY]: [...tags] },
     },
@@ -114,12 +102,25 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
       try {
         const output = await runGetEmailPreviewQa(
           { testId, timeoutSeconds: params.timeout_seconds },
-          defaultDeps(),
+          createDefaultDeps(),
         );
         return {
           content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
         };
       } catch (error) {
+        if (error instanceof InvalidTimeoutError) {
+          // Rejected before any request; nothing was polled.
+          const err = buildErrorResponse(
+            "INVALID_TIMEOUT",
+            `timeout_seconds must be an integer between 0 and ${MAX_TIMEOUT_SECONDS}.`,
+            false,
+            error.detail,
+          );
+          return {
+            isError: true,
+            content: [{ type: "text" as const, text: JSON.stringify(err, null, 2) }],
+          };
+        }
         const isApiError = error instanceof MailgunApiError;
         const statusCode = isApiError ? error.statusCode : 0;
         const retryable = statusCode >= 500 || statusCode === 429 || statusCode === 0;

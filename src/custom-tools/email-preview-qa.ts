@@ -112,9 +112,16 @@ function str(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-// Native severity/impact label, lowercased only. Blank/missing bucket as "unknown".
-function severityLabel(value: unknown): string {
-  const s = typeof value === "string" ? value.trim().toLowerCase() : "";
+// Lifecycle status matching is case-insensitive: lowercased + trimmed for
+// comparison only, never for display.
+function statusToken(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+// Native severity/impact bucket. Only whitespace is trimmed; the API's spelling
+// and casing are preserved. Blank/missing values bucket as "unknown".
+function severityBucket(value: unknown): string {
+  const s = typeof value === "string" ? value.trim() : "";
   return s.length > 0 ? s : "unknown";
 }
 
@@ -150,25 +157,47 @@ export function normalizeRenderState(render: unknown): RenderState {
 
 export interface CheckReference {
   requested: boolean;
+  // A non-null check node was returned under content_checking (the reference
+  // materialized), even if it exposed neither a result id nor errors. This tells
+  // an exposed-but-empty node (terminal, unavailable) apart from an absent-but-
+  // requested one (still pending).
+  exposed: boolean;
   hasErrors: boolean;
   resultId: string | null;
 }
 
-// Per check: requested?, job errored?, and the result id. A null under
-// content_checking means the check was not requested.
-export function extractCheckResultIds(render: unknown): Record<CheckName, CheckReference> {
+// Classify each content_checking node:
+//   explicit null      -> not requested;
+//   absent property    -> pending if the check was requested at create time,
+//                         otherwise not requested;
+//   node with a result id -> referenced;
+//   node with errors[] -> job failed;
+//   node with neither  -> exposed but unavailable (a data gap).
+// `requestedChecks` carries the validated create-time selection so an absent
+// property can be distinguished from a not-requested one. The resume tool cannot
+// recover that selection from the status API; when it is omitted, an absent
+// property is treated as pending (never terminated after a single read).
+export function extractCheckResultIds(
+  render: unknown,
+  requestedChecks?: ReadonlySet<CheckName>,
+): Record<CheckName, CheckReference> {
   const cc = asRecord(asRecord(render).content_checking);
   const result = {} as Record<CheckName, CheckReference>;
   for (const name of CHECK_NAMES) {
     const raw = cc[name];
-    if (raw === null || raw === undefined) {
-      result[name] = { requested: false, hasErrors: false, resultId: null };
+    if (raw === null) {
+      result[name] = { requested: false, exposed: false, hasErrors: false, resultId: null };
+      continue;
+    }
+    if (raw === undefined) {
+      const requested = requestedChecks ? requestedChecks.has(name) : true;
+      result[name] = { requested, exposed: false, hasErrors: false, resultId: null };
       continue;
     }
     const node = asRecord(raw);
     const hasErrors = asArray(node.errors).length > 0;
     const items = asRecord(node.items);
-    result[name] = { requested: true, hasErrors, resultId: str(items.id) };
+    result[name] = { requested: true, exposed: true, hasErrors, resultId: str(items.id) };
   }
   return result;
 }
@@ -190,7 +219,7 @@ export function checkResultPath(name: CheckName, resultId: string): string {
 
 // --- Check fetch outcome ---
 
-export type CheckFetchStatus = "ok" | "not_found" | "error" | "not_fetched";
+export type CheckFetchStatus = "ok" | "not_found" | "not_fetched";
 
 export interface CheckFetch {
   status: CheckFetchStatus;
@@ -199,7 +228,7 @@ export interface CheckFetch {
 
 // Completion signal from the detail payload's meta.status (case-insensitive; missing = complete).
 export function detailStatus(payload: unknown): "complete" | "processing" {
-  const raw = severityLabel(asRecord(asRecord(payload).meta).status);
+  const raw = statusToken(asRecord(asRecord(payload).meta).status);
   if (
     raw.startsWith("process") ||
     raw.startsWith("pending") ||
@@ -216,26 +245,29 @@ export function detailStatus(payload: unknown): "complete" | "processing" {
 export function isCheckTerminal(ref: CheckReference, fetch: CheckFetch): boolean {
   if (!ref.requested) return true;
   if (ref.hasErrors) return true;
-  if (ref.resultId === null) return false;
-  if (fetch.status === "ok") return detailStatus(fetch.payload) !== "processing";
-  if (fetch.status === "not_found" || fetch.status === "error") return true;
-  return false; // not_fetched
+  if (ref.resultId !== null) {
+    if (fetch.status === "ok") return detailStatus(fetch.payload) !== "processing";
+    if (fetch.status === "not_found") return true;
+    return false; // not_fetched
+  }
+  // No result id yet: an exposed-but-empty node is terminal (unavailable); an
+  // absent-but-requested reference is still pending.
+  return ref.exposed;
 }
 
-// Derived from the reference + detail fetch. `timedOut` only affects checks whose
-// reference never materialized.
-export function normalizeCheckLifecycle(
-  ref: CheckReference,
-  fetch: CheckFetch,
-  timedOut: boolean,
-): CheckLifecycle {
+// Derived from the reference + detail fetch. An exposed-but-empty reference is
+// unavailable; an absent-but-requested one stays "processing" (it only reaches
+// output construction when the deadline was hit while still pending).
+export function normalizeCheckLifecycle(ref: CheckReference, fetch: CheckFetch): CheckLifecycle {
   if (!ref.requested) return "not_requested";
   if (ref.hasErrors) return "job_failed";
-  if (ref.resultId === null) return timedOut ? "processing" : "unavailable";
-  if (fetch.status === "ok") return detailStatus(fetch.payload) === "processing" ? "processing" : "complete";
-  if (fetch.status === "not_found") return "unavailable";
-  if (fetch.status === "error") return "unavailable";
-  return "processing"; // referenced but not fetched by the deadline
+  if (ref.resultId !== null) {
+    if (fetch.status === "ok")
+      return detailStatus(fetch.payload) === "processing" ? "processing" : "complete";
+    if (fetch.status === "not_found") return "unavailable";
+    return "processing"; // referenced but not fetched by the deadline
+  }
+  return ref.exposed ? "unavailable" : "processing";
 }
 
 // --- Issue counters ---
@@ -256,7 +288,7 @@ function countFindingBuckets(entries: unknown[]): LinkImageCounts {
     const failures = asArray(record.failures);
     counts.failures += failures.length;
     for (const failure of failures) {
-      increment(counts.by_severity, severityLabel(asRecord(failure).impact));
+      increment(counts.by_severity, severityBucket(asRecord(failure).impact));
     }
   }
   return counts;
@@ -283,9 +315,11 @@ interface AccessibilityCounts {
 
 // Rules carry an instances[] array. Count instances as the headline and rules as a
 // secondary signal; a rule with no instances[] counts as one occurrence.
-function countRuleGroups(
-  entries: unknown[],
-): { instances: number; rules: number; bySeverity: Record<string, number> } {
+function countRuleGroups(entries: unknown[]): {
+  instances: number;
+  rules: number;
+  bySeverity: Record<string, number>;
+} {
   let instances = 0;
   let rules = 0;
   const bySeverity: Record<string, number> = {};
@@ -295,7 +329,7 @@ function countRuleGroups(
     const n = occurrences.length > 0 ? occurrences.length : 1;
     rules += 1;
     instances += n;
-    increment(bySeverity, severityLabel(record.impact), n);
+    increment(bySeverity, severityBucket(record.impact), n);
   }
   return { instances, rules, bySeverity };
 }
@@ -314,18 +348,21 @@ export function countAccessibilityIssues(payload: unknown): AccessibilityCounts 
     const f = countRuleGroups(asArray(record.failures));
     counts.failures += f.instances;
     counts.failure_rules += f.rules;
-    for (const [sev, n] of Object.entries(f.bySeverity)) increment(counts.failures_by_severity, sev, n);
+    for (const [sev, n] of Object.entries(f.bySeverity))
+      increment(counts.failures_by_severity, sev, n);
 
     const r = countRuleGroups(asArray(record.needs_review));
     counts.needs_review += r.instances;
     counts.needs_review_rules += r.rules;
-    for (const [sev, n] of Object.entries(r.bySeverity)) increment(counts.needs_review_by_severity, sev, n);
+    for (const [sev, n] of Object.entries(r.bySeverity))
+      increment(counts.needs_review_by_severity, sev, n);
   }
   return counts;
 }
 
 interface CodeAnalysisCounts {
-  count: number;
+  // null when meta.count is missing or malformed; never substitute features.length.
+  count: number | null;
   instances: number;
   by_feature: Record<string, number>;
   application_support: Record<string, unknown>;
@@ -335,6 +372,8 @@ interface CodeAnalysisCounts {
 
 // meta.count is the canonical total (feature count); meta.*_support pass through
 // verbatim. instances/by_feature are derived from items.features for drill-down.
+// A missing/malformed meta.count is reported as null (a data gap), not invented
+// from features.length.
 export function countCodeAnalysisIssues(payload: unknown): CodeAnalysisCounts {
   const meta = asRecord(asRecord(payload).meta);
   const features = asArray(asRecord(asRecord(payload).items).features);
@@ -349,7 +388,7 @@ export function countCodeAnalysisIssues(payload: unknown): CodeAnalysisCounts {
     instances += instanceCount;
   }
 
-  const count = typeof meta.count === "number" ? meta.count : features.length;
+  const count = typeof meta.count === "number" && Number.isFinite(meta.count) ? meta.count : null;
 
   return {
     count,
@@ -409,6 +448,10 @@ export interface BuildOutputParams {
   fetches: Record<CheckName, CheckFetch>;
   timedOut: boolean;
   warnings?: PreviewWarning[];
+  // Explicit clients requested at create time. When provided, a requested client
+  // absent from every render array becomes a data gap instead of disappearing.
+  // The resume tool cannot recover this from the status API, so it is omitted.
+  requestedClients?: readonly string[];
 }
 
 export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPreviewQaOutput {
@@ -421,7 +464,8 @@ export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPrevi
       code: "render_clients_unavailable",
       product: PRODUCT,
       message: "No client rendering state was returned for this test.",
-      impact: "Per-client completion status becomes available once the preview finishes processing.",
+      impact:
+        "Per-client completion status becomes available once the preview finishes processing.",
     });
   } else if (renderState.processing.length > 0) {
     // Slow/stuck client renders don't block results; report as a non-fatal gap (like the Inspect UI).
@@ -434,8 +478,28 @@ export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPrevi
     });
   }
 
+  // A requested client that never appears in any render array is a data gap, not
+  // a silent omission.
+  if (params.requestedClients) {
+    const present = new Set([
+      ...renderState.completed,
+      ...renderState.processing,
+      ...renderState.bounced,
+    ]);
+    const missing = params.requestedClients.filter((client) => !present.has(client));
+    if (missing.length > 0) {
+      dataGaps.push({
+        code: "requested_client_missing",
+        product: PRODUCT,
+        message: `${missing.length} requested client(s) did not appear in any render state: ${missing.join(", ")}.`,
+        impact:
+          "Per-client render results for these clients are unavailable; they may be unsupported or still initializing.",
+      });
+    }
+  }
+
   const lifecycleFor = (name: CheckName): CheckLifecycle =>
-    normalizeCheckLifecycle(refs[name], fetches[name], timedOut);
+    normalizeCheckLifecycle(refs[name], fetches[name]);
 
   const addRefGap = (name: CheckName, lifecycle: CheckLifecycle): void => {
     if (lifecycle === "unavailable" && refs[name].requested) {
@@ -499,6 +563,18 @@ export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPrevi
           market_support: {},
         };
 
+  // meta.count is the canonical code-analysis total; a completed check that omits
+  // it is a data gap rather than a fabricated count.
+  if (codeLifecycle === "complete" && codeCounts.count === null) {
+    dataGaps.push({
+      code: "code_analysis_count_unavailable",
+      product: PRODUCT,
+      message: "The code analysis result did not include a usable meta.count total.",
+      impact:
+        "The code-analysis feature count is unavailable; per-feature instance counts are still reported.",
+    });
+  }
+
   if (timedOut) {
     dataGaps.push({
       code: "workflow_timed_out",
@@ -526,8 +602,7 @@ export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPrevi
   foldFailures("image_validation", imageCounts.failures, imageCounts.by_severity);
   foldFailures("accessibility", a11yCounts.failures, a11yCounts.failures_by_severity);
 
-  const totalIssues =
-    linkCounts.failures + imageCounts.failures + a11yCounts.failures;
+  const totalIssues = linkCounts.failures + imageCounts.failures + a11yCounts.failures;
 
   return {
     test_id: testId,
@@ -575,7 +650,7 @@ export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPrevi
       code_analysis: {
         status: codeLifecycle,
         result_id: refs.code_analysis.resultId,
-        count: codeCounts.count,
+        count: codeCounts.count ?? 0,
         instances: codeCounts.instances,
         by_feature: codeCounts.by_feature,
         application_support: codeCounts.application_support,
@@ -607,7 +682,9 @@ export interface PollDeps {
 export interface PollParams {
   testId: string;
   timeoutMs: number;
-  intervalMs?: number;
+  // Validated create-time check selection, threaded so an absent content_checking
+  // property can be told apart from a not-requested one. Omitted by the resume tool.
+  requestedChecks?: ReadonlySet<CheckName>;
 }
 
 export interface PollResult {
@@ -642,7 +719,14 @@ async function fetchCheckResults(
         const payload = await deps.request("GET", checkResultPath(name, ref.resultId));
         fetches[name] = { status: "ok", payload };
       } catch (error) {
-        fetches[name] = { status: isNotFound(error) ? "not_found" : "error" };
+        // An unexpected 404 is incomplete-but-successful evidence (unavailable +
+        // data gap). Every other failure (401/403/429/5xx/network) is a real tool
+        // error: propagate it and never retry.
+        if (isNotFound(error)) {
+          fetches[name] = { status: "not_found" };
+        } else {
+          throw error;
+        }
       }
     }),
   );
@@ -652,16 +736,14 @@ async function fetchCheckResults(
 // Poll until every requested check is terminal or the deadline passes. Completion
 // is driven by checks, not per-client rendering (a slow client never blocks).
 // GETs only; creation happens outside this function.
-export async function pollEmailPreviewQa(
-  params: PollParams,
-  deps: PollDeps,
-): Promise<PollResult> {
-  const interval = params.intervalMs ?? POLL_INTERVAL_MS;
+export async function pollEmailPreviewQa(params: PollParams, deps: PollDeps): Promise<PollResult> {
+  // The V2 poll interval is a fixed five seconds; the injected clock/sleep keep
+  // tests deterministic without exposing a configurable interval.
   const deadline = deps.now() + params.timeoutMs;
   const statusPath = `/v2/preview/tests/${encodeURIComponent(params.testId)}`;
 
   let render: unknown = await deps.request("GET", statusPath);
-  let refs = extractCheckResultIds(render);
+  let refs = extractCheckResultIds(render, params.requestedChecks);
   let fetches = await fetchCheckResults(refs, deps);
   let timedOut = false;
 
@@ -669,13 +751,13 @@ export async function pollEmailPreviewQa(
     CHECK_NAMES.every((name) => isCheckTerminal(refs[name], fetches[name]));
 
   while (!allChecksTerminal()) {
-    if (deps.now() + interval > deadline) {
+    if (deps.now() + POLL_INTERVAL_MS > deadline) {
       timedOut = true;
       break;
     }
-    await deps.sleep(interval);
+    await deps.sleep(POLL_INTERVAL_MS);
     render = await deps.request("GET", statusPath);
-    refs = extractCheckResultIds(render);
+    refs = extractCheckResultIds(render, params.requestedChecks);
     fetches = await fetchCheckResults(refs, deps);
   }
 

@@ -3,6 +3,7 @@ import {
   validateRunInput,
   runCreateAndPoll,
   RunEmailPreviewQaError,
+  MAX_HTML_BYTES,
 } from "../../src/custom-tools/run-email-preview-qa.js";
 import { buildPreviewCreateRequest } from "../../src/custom-tools/email-preview-qa.js";
 import { MailgunApiError } from "../../src/api.js";
@@ -71,7 +72,9 @@ const baseInput = { subject: "June campaign", html: "<h1>Hi</h1>", contentChecks
 
 describe("validateRunInput", () => {
   test("rejects a blank subject", () => {
-    expect(() => validateRunInput({ subject: "  ", html: "<p>x</p>" })).toThrow(RunEmailPreviewQaError);
+    expect(() => validateRunInput({ subject: "  ", html: "<p>x</p>" })).toThrow(
+      RunEmailPreviewQaError,
+    );
   });
 
   test("rejects empty html", () => {
@@ -79,7 +82,9 @@ describe("validateRunInput", () => {
   });
 
   test("rejects an explicitly empty clients list", () => {
-    expect(() => validateRunInput({ subject: "s", html: "<p>x</p>", clients: [] })).toThrow(/clients/);
+    expect(() => validateRunInput({ subject: "s", html: "<p>x</p>", clients: [] })).toThrow(
+      /clients/,
+    );
   });
 
   test("dedupes clients and defaults all four checks", () => {
@@ -98,8 +103,80 @@ describe("validateRunInput", () => {
     expect(v.contentChecks).toEqual([]);
   });
 
-  test("clamps timeout to the 300s maximum", () => {
-    expect(validateRunInput({ subject: "s", html: "<p>x</p>", timeoutSeconds: 9000 }).timeoutSeconds).toBe(300);
+  describe("HTML size limit", () => {
+    test("accepts HTML exactly at the 10 MiB limit", () => {
+      // ASCII, so one byte per character: exactly MAX_HTML_BYTES bytes.
+      const html = "a".repeat(MAX_HTML_BYTES);
+      const v = validateRunInput({ subject: "s", html });
+      expect(Buffer.byteLength(v.html, "utf8")).toBe(MAX_HTML_BYTES);
+    });
+
+    test("rejects HTML one byte over the limit", () => {
+      const html = "a".repeat(MAX_HTML_BYTES + 1);
+      expect(() => validateRunInput({ subject: "s", html })).toThrow(/HTML_TOO_LARGE|exceeds/);
+    });
+
+    test("counts UTF-8 bytes, not characters, and rejects with zero requests", async () => {
+      // A multibyte char (é = 2 bytes) pushes the byte length over even though the
+      // character count is at the limit.
+      const html = "é".repeat(MAX_HTML_BYTES / 2 + 1);
+      const { deps, posts, gets } = fakeDeps({
+        createResponse: CREATE_ALL_CHECKS,
+        status: RENDER_COMPLETE,
+      });
+      expect(() => validateRunInput({ subject: "s", html })).toThrow(RunEmailPreviewQaError);
+      expect(posts).toHaveLength(0);
+      expect(gets).toHaveLength(0);
+      expect(deps.request).toBeTypeOf("function");
+    });
+  });
+
+  test("rejects a blank client id instead of silently dropping it", () => {
+    expect(() =>
+      validateRunInput({ subject: "s", html: "<p>x</p>", clients: ["gmail_chrome", "  "] }),
+    ).toThrow(/blank or invalid/);
+  });
+
+  test("passes valid client ids through unchanged (exact-string dedupe, no trimming)", () => {
+    const v = validateRunInput({
+      subject: "s",
+      html: "<p>x</p>",
+      clients: [" spaced ", " spaced ", "b"],
+    });
+    expect(v.clients).toEqual([" spaced ", "b"]);
+  });
+
+  describe("timeout contract", () => {
+    test("defaults to 120", () => {
+      expect(validateRunInput({ subject: "s", html: "<p>x</p>" }).timeoutSeconds).toBe(120);
+    });
+    test("accepts 0 and 300", () => {
+      expect(
+        validateRunInput({ subject: "s", html: "<p>x</p>", timeoutSeconds: 0 }).timeoutSeconds,
+      ).toBe(0);
+      expect(
+        validateRunInput({ subject: "s", html: "<p>x</p>", timeoutSeconds: 300 }).timeoutSeconds,
+      ).toBe(300);
+    });
+    test.each([-1, 301, 9000, 1.5])("rejects invalid value %s", (value) => {
+      expect(() =>
+        validateRunInput({ subject: "s", html: "<p>x</p>", timeoutSeconds: value }),
+      ).toThrow(RunEmailPreviewQaError);
+    });
+    test("a rejected timeout makes zero requests", async () => {
+      const { deps, posts, gets } = fakeDeps({
+        createResponse: CREATE_ALL_CHECKS,
+        status: RENDER_COMPLETE,
+      });
+      // validateRunInput throws before runCreateAndPoll ever runs.
+      expect(() => validateRunInput({ ...baseInput, timeoutSeconds: -1 })).toThrow(
+        RunEmailPreviewQaError,
+      );
+      expect(posts).toHaveLength(0);
+      expect(gets).toHaveLength(0);
+      // Guard against an unused-deps lint by referencing deps.
+      expect(deps.request).toBeTypeOf("function");
+    });
   });
 });
 
@@ -137,7 +214,10 @@ describe("buildPreviewCreateRequest", () => {
 
 describe("runCreateAndPoll", () => {
   test("creates exactly once, then polls and summarizes", async () => {
-    const { deps, posts, gets } = fakeDeps({ createResponse: CREATE_ALL_CHECKS, status: RENDER_COMPLETE });
+    const { deps, posts, gets } = fakeDeps({
+      createResponse: CREATE_ALL_CHECKS,
+      status: RENDER_COMPLETE,
+    });
     const output = await runCreateAndPoll(validateRunInput(baseInput), deps);
 
     expect(posts).toHaveLength(1);
@@ -156,7 +236,10 @@ describe("runCreateAndPoll", () => {
   });
 
   test("create response without a test id errors and never polls", async () => {
-    const { deps, posts, gets } = fakeDeps({ createResponse: CREATE_MISSING_TEST_ID, status: RENDER_COMPLETE });
+    const { deps, posts, gets } = fakeDeps({
+      createResponse: CREATE_MISSING_TEST_ID,
+      status: RENDER_COMPLETE,
+    });
     await expect(runCreateAndPoll(validateRunInput(baseInput), deps)).rejects.toMatchObject({
       code: "CREATE_NO_TEST_ID",
     });
@@ -164,20 +247,80 @@ describe("runCreateAndPoll", () => {
     expect(gets).toHaveLength(0);
   });
 
-  test("ambiguous transport failure is not retried", async () => {
+  test("ambiguous transport failure is not retryable and posts exactly once", async () => {
     const { deps, posts, gets } = fakeDeps({ createError: new Error("socket hang up") });
     await expect(
       runCreateAndPoll(validateRunInput({ ...baseInput, referenceId: "lovable-build-123" }), deps),
-    ).rejects.toMatchObject({ code: "AMBIGUOUS_CREATE", retryable: true, referenceId: "lovable-build-123" });
+    ).rejects.toMatchObject({
+      code: "AMBIGUOUS_CREATE",
+      retryable: false,
+      referenceId: "lovable-build-123",
+    });
     expect(posts).toHaveLength(1);
     expect(gets).toHaveLength(0);
   });
 
   test("a definitive 403 create rejection is reported and not retried", async () => {
-    const { deps, posts } = fakeDeps({ createError: new MailgunApiError("forbidden", 403, "not enabled") });
+    const { deps, posts } = fakeDeps({
+      createError: new MailgunApiError("forbidden", 403, "not enabled"),
+    });
     await expect(runCreateAndPoll(validateRunInput(baseInput), deps)).rejects.toMatchObject({
       code: "NOT_ENTITLED",
+      retryable: false,
     });
+    expect(posts).toHaveLength(1);
+  });
+
+  test.each([429, 500, 503])(
+    "a definitive %s create error is not retryable and posts exactly once",
+    async (statusCode) => {
+      const { deps, posts } = fakeDeps({
+        createError: new MailgunApiError("rejected", statusCode, "nope"),
+      });
+      await expect(runCreateAndPoll(validateRunInput(baseInput), deps)).rejects.toMatchObject({
+        code: "CREATE_REJECTED",
+        retryable: false,
+      });
+      expect(posts).toHaveLength(1);
+    },
+  );
+
+  test("a poll failure after a successful create is not retryable and points to the resume tool", async () => {
+    // Create succeeds; the status GET throws a non-404 error the poll propagates.
+    const { deps, posts } = fakeDeps({
+      createResponse: CREATE_ALL_CHECKS,
+      status: () => {
+        throw new MailgunApiError("boom", 500, "server error");
+      },
+    });
+    await expect(runCreateAndPoll(validateRunInput(baseInput), deps)).rejects.toMatchObject({
+      code: "POLL_FAILED_AFTER_CREATE",
+      retryable: false,
+      testId: "preview_test_001",
+    });
+    expect(posts).toHaveLength(1);
+  });
+
+  test("an explicit empty content_checks selection terminates after one status read", async () => {
+    // With no checks requested, the render exposes no content_checking nodes.
+    const renderNoChecks = {
+      completed: ["gmail_chrome"],
+      processing: [],
+      bounced: [],
+      content_checking: {},
+    };
+    const { deps, posts, gets } = fakeDeps({
+      createResponse: CREATE_ALL_CHECKS,
+      status: renderNoChecks,
+    });
+    const output = await runCreateAndPoll(
+      validateRunInput({ ...baseInput, contentChecks: [] }),
+      deps,
+    );
+    // No checks requested -> all not_requested -> terminal immediately, no result fetches.
+    expect(output.checks.link_validation.status).toBe("not_requested");
+    expect(gets.filter((g) => g === STATUS_PATH)).toHaveLength(1);
+    expect(gets.some((g) => g.startsWith("/v1/inspect/"))).toBe(false);
     expect(posts).toHaveLength(1);
   });
 
