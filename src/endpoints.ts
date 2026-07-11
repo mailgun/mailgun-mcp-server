@@ -152,16 +152,13 @@ export const endpoints: readonly EndpointEntry[] = [
   },
 
   // Email Preview (Inspect)
-  // V1 aggregate results — preserved as-is for compatibility. Do not repoint;
-  // the V2 render/status summary is exposed separately as get_preview_test_status.
+  // V1 aggregate results; kept for compatibility (V2 status is get_preview_test_status).
   {
     endpoint: "GET /v1/preview/tests/{test_id}/results",
     toolName: "get_preview_result",
     tags: ["inspect"],
   },
-  // V2 read primitives. Creation (POST /v2/preview/tests) is intentionally not
-  // an allowlisted primitive; it is exposed only through the run_email_preview_qa
-  // composite custom tool.
+  // Creation is intentionally not a primitive; it is exposed only via run_email_preview_qa.
   {
     endpoint: "GET /v2/preview/tests",
     toolName: "list_preview_tests",
@@ -177,14 +174,13 @@ export const endpoints: readonly EndpointEntry[] = [
     toolName: "get_preview_client_result",
     tags: ["inspect"],
   },
-  // Client catalog remains a V1 endpoint; there is no V2 catalog.
+  // Client catalog is V1 (no V2 catalog).
   {
     endpoint: "GET /v1/preview/tests/clients",
     toolName: "list_preview_clients",
     tags: ["inspect"],
   },
-  // Structured-check detail results (diagnostic escape hatches). These return
-  // the full upstream payload and may be large / contain email content.
+  // Structured-check detail results; large payloads that may contain email content.
   {
     endpoint: "GET /v1/inspect/links/{id}",
     toolName: "get_link_validation_result",

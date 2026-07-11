@@ -10,11 +10,8 @@ import {
   type RequestFn,
 } from "./email-preview-qa.js";
 
-// get_email_preview_qa is the READ / RESUME composite. It never creates a test.
-// Given an existing test id, it polls the V2 render status until the render
-// settles (or a deadline passes), fetches the referenced structured-check
-// results, and returns the mechanical counts-and-references QA summary. Creation
-// is handled only by the separate run_email_preview_qa composite.
+// The READ/RESUME composite: polls an existing test id, fetches the referenced
+// check results, and returns the same summary. Never creates a test.
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
 const MAX_TIMEOUT_SECONDS = 600;
@@ -87,7 +84,7 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
     "get_email_preview_qa",
     {
       description:
-        "Resume and summarize an existing email preview QA test. Polls the render status of a test id until it settles (or the timeout is reached), retrieves the requested structured-check results (links, images, accessibility, code analysis), and returns mechanical counts and result references — never a pass/fail verdict and never raw email content. Does not create a test; use run_email_preview_qa to create one.",
+        "Resume and summarize an existing email preview QA test. Polls the render status of a test id until it settles (or the timeout is reached), retrieves the requested structured-check results (links, images, accessibility, code analysis), and returns counts and result references. Does not create a test; use run_email_preview_qa to create one.",
       inputSchema: {
         test_id: z.string().describe("The id of an existing email preview test to resume and summarize."),
         timeout_seconds: z

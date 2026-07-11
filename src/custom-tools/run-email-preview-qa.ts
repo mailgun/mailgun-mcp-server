@@ -15,11 +15,9 @@ import {
   type RequestFn,
 } from "./email-preview-qa.js";
 
-// run_email_preview_qa is the CREATE / poll composite — the one write in the
-// Email Preview QA surface. It validates input, issues exactly ONE
-// POST /v2/preview/tests, then reuses the shared read/poll/build path. It never
-// retries the create (V2 creation is not idempotent) and never issues a second
-// POST on timeout or ambiguity.
+// The CREATE/poll composite: validates input, issues exactly one
+// POST /v2/preview/tests, then reuses the shared poll/build path. Never retries
+// the create (V2 creation is not idempotent).
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
 const MAX_TIMEOUT_SECONDS = 300;
@@ -44,8 +42,7 @@ export interface ValidatedRunInput {
   timeoutSeconds: number;
 }
 
-// Structured error surfaced by the composite. `retryable` refers to re-invoking
-// the tool; it never implies the composite itself should silently re-POST.
+// Structured error; `retryable` refers to re-invoking the tool, never an auto re-POST.
 export class RunEmailPreviewQaError extends Error {
   constructor(
     public readonly code: string,
@@ -131,9 +128,8 @@ export function validateRunInput(raw: RunEmailPreviewQaInput): ValidatedRunInput
   };
 }
 
-// A definitive API error means Mailgun responded (4xx/5xx). Anything else — a
-// timeout (statusCode 0) or a transport error — is ambiguous: the POST may have
-// reached Mailgun, so we must not retry it.
+// Definitive = Mailgun responded 4xx/5xx. Anything else (timeout/transport) is
+// ambiguous: the POST may have reached Mailgun, so never retry.
 function isDefinitiveApiError(error: unknown): error is MailgunApiError {
   return error instanceof MailgunApiError && error.statusCode >= 400;
 }
@@ -175,8 +171,7 @@ export async function runCreateAndPoll(
 
   const testId = extractCreatedTestId(created);
   if (testId === null) {
-    // The create call succeeded at the transport level but returned no id. Treat
-    // as a runtime error; never poll and never re-POST.
+    // Success at transport level but no id: runtime error; never poll or re-POST.
     throw new RunEmailPreviewQaError(
       "CREATE_NO_TEST_ID",
       "The create response did not include a test id.",
@@ -235,7 +230,7 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
     "run_email_preview_qa",
     {
       description:
-        "Create and summarize an email preview QA test from HTML. This CREATES one remote Mailgun Inspect preview test and CONSUMES preview quota; it does NOT send email. It issues exactly one create request, polls the render/checks until they settle or the timeout is reached, and returns mechanical counts and result references — never a pass/fail verdict or raw email content. V2 creation is not idempotent and this tool never auto-retries the create: on a timeout it returns partial results with timed_out=true (resume with get_email_preview_qa), and on an ambiguous failure it reports that a test may have been created and recommends list_preview_tests rather than creating another.",
+        "Create and summarize an email preview QA test from HTML. This CREATES one remote Mailgun Inspect preview test and CONSUMES preview quota; it does NOT send email. It issues exactly one create request, polls the render/checks until they settle or the timeout is reached, and returns counts and result references. V2 creation is not idempotent and this tool never auto-retries the create: on a timeout it returns partial results with timed_out=true (resume with get_email_preview_qa), and on an ambiguous failure it reports that a test may have been created and recommends list_preview_tests rather than creating another.",
       inputSchema: {
         subject: z.string().describe("Subject line for the preview test (required)."),
         html: z.string().describe("Rendered HTML email content to test (required; the only supported source)."),
