@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { makeMailgunRequest, MailgunApiError } from "../api.js";
+import { MailgunApiError } from "../api.js";
 import { META_TAGS_KEY, type Tag } from "../tags.js";
 import {
   buildEmailPreviewQaOutput,
@@ -12,17 +12,25 @@ import {
   type CheckName,
   type EmailPreviewQaOutput,
   type PollDeps,
-  type RequestFn,
 } from "./email-preview-qa.js";
+import {
+  createDefaultDeps,
+  DEFAULT_TIMEOUT_SECONDS,
+  InvalidTimeoutError,
+  MAX_TIMEOUT_SECONDS,
+  resolveTimeoutSeconds,
+  timeoutSecondsSchema,
+} from "./email-preview-qa-runtime.js";
 
 // The CREATE/poll composite: validates input, issues exactly one
 // POST /v2/preview/tests, then reuses the shared poll/build path. Never retries
 // the create (V2 creation is not idempotent).
 
-const DEFAULT_TIMEOUT_SECONDS = 120;
-const MAX_TIMEOUT_SECONDS = 300;
-const PER_REQUEST_TIMEOUT_MS = 30_000;
 const CREATE_PATH = "/v2/preview/tests";
+
+// Intentional client-side V1 input limit, not a confirmed upstream Inspect maximum.
+// Checked against the UTF-8 byte length before any network access.
+export const MAX_HTML_BYTES = 10 * 1024 * 1024; // 10 MiB
 
 export interface RunEmailPreviewQaInput {
   subject: string;
@@ -57,13 +65,6 @@ export class RunEmailPreviewQaError extends Error {
   }
 }
 
-function clampTimeoutSeconds(value: number | undefined): number {
-  if (value === undefined || Number.isNaN(value)) return DEFAULT_TIMEOUT_SECONDS;
-  if (value < 0) return 0;
-  if (value > MAX_TIMEOUT_SECONDS) return MAX_TIMEOUT_SECONDS;
-  return value;
-}
-
 // Pure validation. Throws RunEmailPreviewQaError with an INVALID_* code before
 // any network work happens.
 export function validateRunInput(raw: RunEmailPreviewQaInput): ValidatedRunInput {
@@ -87,6 +88,16 @@ export function validateRunInput(raw: RunEmailPreviewQaInput): ValidatedRunInput
     );
   }
 
+  const htmlBytes = Buffer.byteLength(html, "utf8");
+  if (htmlBytes > MAX_HTML_BYTES) {
+    throw new RunEmailPreviewQaError(
+      "HTML_TOO_LARGE",
+      "The HTML content exceeds the maximum size for an email preview test.",
+      false,
+      `The 'html' parameter is ${htmlBytes} UTF-8 bytes, over the ${MAX_HTML_BYTES}-byte (10 MiB) limit. This is an intentional client-side MCP input limit, not a confirmed upstream Inspect maximum.`,
+    );
+  }
+
   let clients: string[] | undefined;
   if (raw.clients !== undefined) {
     if (!Array.isArray(raw.clients) || raw.clients.length === 0) {
@@ -97,16 +108,20 @@ export function validateRunInput(raw: RunEmailPreviewQaInput): ValidatedRunInput
         "An empty clients array was provided; omit clients entirely to use the Mailgun default set.",
       );
     }
-    // Dedupe while preserving order.
-    clients = [...new Set(raw.clients.filter((c) => typeof c === "string" && c.trim() !== ""))];
-    if (clients.length === 0) {
-      throw new RunEmailPreviewQaError(
-        "INVALID_CLIENTS",
-        "The clients list did not contain any valid client ids.",
-        false,
-        "All provided client ids were blank.",
-      );
+    // Reject the whole input if any entry is blank/invalid rather than silently
+    // dropping it; a valid id is passed through unchanged (no trimming that could
+    // turn it into a different id), deduplicated by exact string.
+    for (const client of raw.clients) {
+      if (typeof client !== "string" || client.trim() === "") {
+        throw new RunEmailPreviewQaError(
+          "INVALID_CLIENTS",
+          "The clients list contained a blank or invalid client id.",
+          false,
+          "Every client id must be a non-empty string; omit clients entirely to use the Mailgun default set.",
+        );
+      }
     }
+    clients = [...new Set(raw.clients)];
   }
 
   // contentChecks: default all four; empty array is valid and means "no checks".
@@ -118,13 +133,28 @@ export function validateRunInput(raw: RunEmailPreviewQaInput): ValidatedRunInput
       ? raw.referenceId.trim()
       : undefined;
 
+  let timeoutSeconds: number;
+  try {
+    timeoutSeconds = resolveTimeoutSeconds(raw.timeoutSeconds);
+  } catch (error) {
+    if (error instanceof InvalidTimeoutError) {
+      throw new RunEmailPreviewQaError(
+        "INVALID_TIMEOUT",
+        `timeout_seconds must be an integer between 0 and ${MAX_TIMEOUT_SECONDS}.`,
+        false,
+        error.detail,
+      );
+    }
+    throw error;
+  }
+
   return {
     subject,
     html,
     clients,
     contentChecks,
     referenceId,
-    timeoutSeconds: clampTimeoutSeconds(raw.timeoutSeconds),
+    timeoutSeconds,
   };
 }
 
@@ -147,22 +177,26 @@ export async function runCreateAndPoll(
   } catch (error) {
     if (isDefinitiveApiError(error)) {
       const code = error.statusCode === 403 ? "NOT_ENTITLED" : "CREATE_REJECTED";
+      // A definitive 4xx/5xx (including 429/5xx) means creation was rejected and
+      // MAY have consumed quota; reinvoking this tool would POST again, so it is
+      // never retryable. Reconcile via list_preview_tests instead.
       throw new RunEmailPreviewQaError(
         code,
         error.statusCode === 403
           ? "Email Preview is not enabled for this account, or creation was forbidden."
           : "Mailgun rejected the email preview test creation request.",
-        error.statusCode >= 500 || error.statusCode === 429,
-        `POST ${CREATE_PATH} returned ${error.statusCode}: ${error.apiMessage ?? error.message}`,
+        false,
+        `POST ${CREATE_PATH} returned ${error.statusCode}: ${error.apiMessage ?? error.message}. Reconcile with list_preview_tests${input.referenceId ? ` using reference_id '${input.referenceId}'` : ""} before creating another test.`,
         undefined,
         input.referenceId,
       );
     }
-    // Ambiguous: the create may have reached Mailgun before the failure.
+    // Ambiguous: the create may have reached Mailgun before the failure, so a
+    // second create is unsafe. Not retryable; reconcile via list_preview_tests.
     throw new RunEmailPreviewQaError(
       "AMBIGUOUS_CREATE",
       "The create request failed after it may have reached Mailgun. A preview test may have been created; a second create was NOT attempted.",
-      true,
+      false,
       `POST ${CREATE_PATH} failed without a definitive response: ${error instanceof Error ? error.message : String(error)}. Reconcile with list_preview_tests${input.referenceId ? ` using reference_id '${input.referenceId}'` : ""} before creating another test.`,
       undefined,
       input.referenceId,
@@ -184,15 +218,21 @@ export async function runCreateAndPoll(
 
   const warnings = normalizeWarnings(created);
 
+  const requestedChecks = new Set(input.contentChecks);
+
   let poll;
   try {
-    poll = await pollEmailPreviewQa({ testId, timeoutMs: input.timeoutSeconds * 1000 }, deps);
+    poll = await pollEmailPreviewQa(
+      { testId, timeoutMs: input.timeoutSeconds * 1000, requestedChecks },
+      deps,
+    );
   } catch (error) {
-    // The test WAS created; a polling failure must not trigger a re-create.
+    // The test WAS created; reinvoking this tool would POST again. Not retryable:
+    // resume the existing test with get_email_preview_qa instead.
     throw new RunEmailPreviewQaError(
       "POLL_FAILED_AFTER_CREATE",
       "The preview test was created, but retrieving its status failed.",
-      true,
+      false,
       `Test '${testId}' was created. Resume with get_email_preview_qa (test_id '${testId}') rather than creating another test. Cause: ${error instanceof Error ? error.message : String(error)}`,
       testId,
       input.referenceId,
@@ -206,23 +246,8 @@ export async function runCreateAndPoll(
     fetches: poll.fetches,
     timedOut: poll.timedOut,
     warnings,
+    requestedClients: input.clients,
   });
-}
-
-function defaultDeps(): PollDeps {
-  const request: RequestFn = (method, path, body) =>
-    makeMailgunRequest(
-      method,
-      path,
-      (body as Record<string, unknown> | undefined) ?? null,
-      "application/json",
-      PER_REQUEST_TIMEOUT_MS,
-    );
-  return {
-    request,
-    now: () => Date.now(),
-    sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
-  };
 }
 
 export function register(server: McpServer, tags: readonly Tag[] = []): void {
@@ -233,25 +258,30 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
         "Create and summarize an email preview QA test from HTML. This CREATES one remote Mailgun Inspect preview test and CONSUMES preview quota; it does NOT send email. It issues exactly one create request, polls the render/checks until they settle or the timeout is reached, and returns counts and result references. V2 creation is not idempotent and this tool never auto-retries the create: on a timeout it returns partial results with timed_out=true (resume with get_email_preview_qa), and on an ambiguous failure it reports that a test may have been created and recommends list_preview_tests rather than creating another.",
       inputSchema: {
         subject: z.string().describe("Subject line for the preview test (required)."),
-        html: z.string().describe("Rendered HTML email content to test (required; the only supported source)."),
+        html: z
+          .string()
+          .describe("Rendered HTML email content to test (required; the only supported source)."),
         clients: z
           .array(z.string())
           .optional()
-          .describe("Optional explicit client ids (from list_preview_clients). Omit to use Mailgun defaults; an empty list is rejected."),
+          .describe(
+            "Optional explicit client ids (from list_preview_clients). Omit to use Mailgun defaults; an empty list is rejected.",
+          ),
         content_checks: z
           .array(z.enum(["link_validation", "image_validation", "accessibility", "code_analysis"]))
           .optional()
-          .describe("Which structured checks to run. Defaults to all four; an empty list runs no checks."),
+          .describe(
+            "Which structured checks to run. Defaults to all four; an empty list runs no checks.",
+          ),
         reference_id: z
           .string()
           .optional()
-          .describe("Optional caller-supplied id echoed back and useful for reconciling an ambiguous create via list_preview_tests."),
-        timeout_seconds: z
-          .number()
-          .optional()
           .describe(
-            `How long to poll for the render/checks to settle, in seconds (0-${MAX_TIMEOUT_SECONDS}, default ${DEFAULT_TIMEOUT_SECONDS}). On timeout the partial summary is returned with timed_out=true; resume with get_email_preview_qa.`,
+            "Optional caller-supplied id echoed back and useful for reconciling an ambiguous create via list_preview_tests.",
           ),
+        timeout_seconds: timeoutSecondsSchema.describe(
+          `How long to poll for the render/checks to settle, in whole seconds (integer 0-${MAX_TIMEOUT_SECONDS}, default ${DEFAULT_TIMEOUT_SECONDS}). On timeout the partial summary is returned with timed_out=true; resume with get_email_preview_qa.`,
+        ),
       },
       _meta: { [META_TAGS_KEY]: [...tags] },
     },
@@ -265,7 +295,7 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
           referenceId: params.reference_id,
           timeoutSeconds: params.timeout_seconds,
         });
-        const output = await runCreateAndPoll(validated, defaultDeps());
+        const output = await runCreateAndPoll(validated, createDefaultDeps());
         return {
           content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
         };
