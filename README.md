@@ -13,30 +13,30 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Ma
 
 ### Capabilities
 
-- **Messaging** — Send emails, retrieve stored messages, resend messages
-- **Domains** — View domain details, verify DNS configuration, manage tracking settings (click, open, unsubscribe)
-- **Webhooks** — List, create, and update event webhooks
-- **Routes** — View and update inbound email routing rules
-- **Mailing Lists** — Create, view, and update mailing lists and their members
-- **Templates** — Create, view, and update email templates with versioning
-- **Analytics** — Query sending metrics, usage metrics, and logs
-- **Stats** — View aggregate statistics by domain, tag, provider, device, and country
-- **Suppressions** — View bounces, unsubscribes, complaints, and allowlist entries
-- **IPs & IP Pools** — View IP assignments and dedicated IP pool configuration
-- **Bounce Classification** — Analyze bounce types and delivery issues
-- **Validation** — Validate email address deliverability and syntax before sending (`validate`)
-- **Optimize (Inbox Placement)** — Retrieve inbox placement / seed test results to gauge deliverability (`optimize`)
-- **Inspect (Email Preview)** — Retrieve email rendering and preview test results across clients (`inspect`)
-- **Account Limits** — View custom monthly sending limits
+- **Messaging**: Send emails, retrieve stored messages, resend messages
+- **Domains**: View domain details, verify DNS configuration, manage tracking settings (click, open, unsubscribe)
+- **Webhooks**: List, create, and update event webhooks
+- **Routes**: View and update inbound email routing rules
+- **Mailing Lists**: Create, view, and update mailing lists and their members
+- **Templates**: Create, view, and update email templates with versioning
+- **Analytics**: Query sending metrics, usage metrics, and logs
+- **Stats**: View aggregate statistics by domain, tag, provider, device, and country
+- **Suppressions**: View bounces, unsubscribes, complaints, and allowlist entries
+- **IPs & IP Pools**: View IP assignments and dedicated IP pool configuration
+- **Bounce Classification**: Analyze bounce types and delivery issues
+- **Validation**: Validate email address deliverability and syntax before sending (`validate`)
+- **Optimize (Inbox Placement)**: Retrieve inbox placement and seed test results to gauge deliverability (`optimize`)
+- **Inspect (Email Preview)**: Retrieve email rendering and preview test results across clients, and run the [Email Preview QA](#email-preview-qa-inspect) create/resume workflow (`inspect`)
+- **Account Limits**: View custom monthly sending limits
 
 The parenthetical labels above (`validate`, `optimize`, `inspect`) are the product tags used by [tag filtering](#tag-filtering). Every other capability is registered under the `send` tag.
 
 > [!NOTE]
-> Tools are limited to read and update operations — no delete operations are exposed, which keeps the blast radius of an unintended action small. See [Security Considerations](#security-considerations).
+> Most tools are read and update operations, and no delete operations are exposed, which keeps the blast radius of an unintended action small. One exception is `run_email_preview_qa`, which creates a remote Mailgun preview test and consumes preview quota (it does not send email). See [Email Preview QA](#email-preview-qa-inspect) and [Security Considerations](#security-considerations). This server should not be described as read-only.
 
 ### How it works
 
-The server is OpenAPI driven. At startup it parses a bundled Mailgun OpenAPI spec and registers a curated allowlist of endpoints as MCP tools, generating each tool's input schema (via Zod) from the spec. Every tool is annotated with a Mailgun product tag (`send`, `validate`, `optimize`, or `inspect`). All matching tools are registered up front — there is no lazy or on demand loading. [Tag filtering](#tag-filtering) is applied at startup to scope *which* tools get registered, so a given workflow can expose only the products it needs.
+The server is OpenAPI driven. At startup it parses a bundled Mailgun OpenAPI spec and registers a curated allowlist of endpoints as MCP tools, generating each tool's input schema (via Zod) from the spec. Every tool is annotated with a Mailgun product tag (`send`, `validate`, `optimize`, or `inspect`). All matching tools are registered up front, with no lazy or on demand loading. [Tag filtering](#tag-filtering) is applied at startup to scope _which_ tools get registered, so a given workflow can expose only the products it needs.
 
 ## Prerequisites
 
@@ -164,32 +164,32 @@ Add to `~/.gemini/settings.json`:
 
 ### Environment variables
 
-| Variable               | Required | Default              | Description                                                                                 |
-| ---------------------- | -------- | -------------------- | ------------------------------------------------------------------------------------------- |
-| `MAILGUN_API_KEY`      | Yes      | —                    | Your Mailgun API key                                                                        |
-| `MAILGUN_API_REGION`   | No       | `us`                 | API region: `us` or `eu`                                                                     |
-| `MAILGUN_API_HOSTNAME` | No       | (derived from region) | Override the API hostname (e.g. `api.eu.mailgun.net`). Takes precedence over the region.     |
-| `MAILGUN_MCP_TAGS`     | No       | (all)                | Comma-separated product tags to enable. Equivalent to `--tags`. The CLI flag takes precedence. |
+| Variable               | Required | Default               | Description                                                                                    |
+| ---------------------- | -------- | --------------------- | ---------------------------------------------------------------------------------------------- |
+| `MAILGUN_API_KEY`      | Yes      | (none)                | Your Mailgun API key                                                                           |
+| `MAILGUN_API_REGION`   | No       | `us`                  | API region: `us` or `eu`                                                                       |
+| `MAILGUN_API_HOSTNAME` | No       | (derived from region) | Override the API hostname (e.g. `api.eu.mailgun.net`). Takes precedence over the region.       |
+| `MAILGUN_MCP_TAGS`     | No       | (all)                 | Comma-separated product tags to enable. Equivalent to `--tags`. The CLI flag takes precedence. |
 
 ### CLI options
 
 Pass flags after the package name in your client's `args` (e.g. `["-y", "@mailgun/mcp-server", "--tags", "validate,inspect"]`).
 
-| Flag              | Description                                                                             |
-| ----------------- | -------------------------------------------------------------------------------------- |
-| `--tags <list>`   | Comma-separated product tags to enable (default: all). Valid: `send`, `validate`, `optimize`, `inspect`. |
-| `--list-tags`     | Print the valid tag values and exit.                                                   |
-| `--help`, `-h`    | Show usage and exit.                                                                    |
+| Flag            | Description                                                                                              |
+| --------------- | -------------------------------------------------------------------------------------------------------- |
+| `--tags <list>` | Comma-separated product tags to enable (default: all). Valid: `send`, `validate`, `optimize`, `inspect`. |
+| `--list-tags`   | Print the valid tag values and exit.                                                                     |
+| `--help`, `-h`  | Show usage and exit.                                                                                     |
 
 ### Tag filtering
 
-You can scope which tools the server registers to one or more Mailgun product tags. This is useful for narrowing the toolset shown to the model — for example, only exposing validation tools to a workflow that doesn't need send capabilities.
+You can scope which tools the server registers to one or more Mailgun product tags. This is useful for narrowing the toolset shown to the model. For example, you might expose only validation tools to a workflow that doesn't need send capabilities.
 
 Valid tags: `send`, `validate`, `optimize`, `inspect`. When unspecified, every tool is registered (today's default).
 
 Filtering uses **OR semantics**: a tool is registered if any of its tags appears in the active set.
 
-**Via CLI flag** — pass `--tags` in your MCP client config's `args`:
+**Via CLI flag:** pass `--tags` in your MCP client config's `args`:
 
 ```json
 {
@@ -205,7 +205,7 @@ Filtering uses **OR semantics**: a tool is registered if any of its tags appears
 }
 ```
 
-**Via environment variable** — set `MAILGUN_MCP_TAGS` (CLI flag wins if both are present):
+**Via environment variable:** set `MAILGUN_MCP_TAGS` (CLI flag wins if both are present):
 
 ```json
 "env": {
@@ -216,6 +216,38 @@ Filtering uses **OR semantics**: a tool is registered if any of its tags appears
 
 > [!TIP]
 > Run the binary with `--list-tags` to print supported tag values, or `--help` for full usage. Unknown tags are rejected at startup with a clear error message.
+
+## Email Preview QA (Inspect)
+
+The `inspect` product exposes an Email Preview QA workflow for checking how an HTML email renders across clients and what structured checks (links, images, accessibility, code analysis) report. It is built from two composite tools plus a set of lower level read primitives.
+
+### Composite tools
+
+- **`run_email_preview_qa`** creates a preview test and summarizes it. This CREATES one remote Mailgun preview test and CONSUMES preview quota. It does not send email. The tool issues exactly one create request, polls the render and checks until they settle or the timeout is reached, and returns counts and result references. V2 creation is not idempotent, so the tool never auto retries the create. On a timeout it returns partial results with `timed_out=true` (resume with `get_email_preview_qa`); on an ambiguous transport failure it reports that a test may have been created and recommends reconciling with `list_preview_tests` rather than creating another.
+- **`get_email_preview_qa`** resumes and summarizes an existing test by `test_id`. It only reads (it never creates a test), so it is the tool to use for polling a long running test or picking up after a timeout.
+
+### Inputs
+
+- **HTML only.** The V1 input source is the rendered `html` string plus a `subject`. URL, MIME, ZIP, and template sources are not supported. The `html` is capped at 10 MiB (measured as UTF-8 bytes) and rejected before any request. This is an intentional client-side input limit, not a confirmed upstream Inspect maximum.
+- **Content checks.** `content_checks` defaults to all four checks (`link_validation`, `image_validation`, `accessibility`, `code_analysis`). Pass a subset to run only those, or an empty list to run none.
+- **Clients.** Omitting `clients` uses Mailgun's server default client set. To select clients explicitly, pass ids from the V1 preview client catalog (`list_preview_clients`), which is authoritative for explicit client selection. Every client id must be a non-empty string; a blank or invalid id rejects the whole request.
+- **Timeout.** `timeout_seconds` is an integer from 0 to 300 (default 120). Values outside that range, and fractional values, are rejected before any network request is made.
+
+### Output and semantics
+
+- The composites return counts and result references (per check status, failure and severity tallies, per client render status, and any `data_gaps`). They do not return raw upstream payloads, individual issue records, or rendered HTML.
+- **No Mailgun-authored pass/fail.** The workflow does not emit a top level verdict. Quality gating is owned by the customer: the tool reports what the checks found and leaves the judgment to you.
+- Slow client renders never block completion. Completion is driven by the checks, and a straggling client is reported per client plus a non-fatal `render_incomplete` gap.
+
+### Read primitives
+
+The lower level `inspect` tools back the composites and can be called directly: `list_preview_tests`, `get_preview_test_status`, `get_preview_client_result`, `list_preview_clients`, the per check detail tools (links, images, accessibility, analyze), and the V1 aggregate `get_preview_result` (kept for compatibility).
+
+> [!NOTE]
+> The detail and client result tools can return large payloads that include rendered HTML snippets and other potentially sensitive content. Run the server in trusted environments and review what is surfaced to the model.
+
+> [!NOTE]
+> Preview test creation is a mutating, quota-consuming action. A broader, MCP-wide review of mutation safety (confirmation prompts, write gating) is tracked as a separate follow-up and is intentionally not added as preview-only policy here.
 
 ## Sample Prompts
 
@@ -317,6 +349,14 @@ Get the email preview results for test TEST_ID_HERE and tell me if the email
 renders correctly across clients.
 ```
 
+#### Run an Email Preview QA (Inspect)
+
+```
+Run an email preview QA on this HTML and tell me about any broken links, image
+issues, or accessibility problems. This creates a Mailgun preview test and uses
+preview quota. Subject "Spring sale", HTML: <HTML_HERE>
+```
+
 ## Development
 
 ### Run from source
@@ -380,13 +420,14 @@ MAILGUN_API_KEY=YOUR-mailgun-api-key npx @modelcontextprotocol/inspector node di
 `npm install` installs a git pre-commit hook (via husky) that runs `oxlint --fix` and `oxfmt` on staged TypeScript/JavaScript files and runs `npm run check:versions`. Fixable issues are auto-fixed and re-staged; commits that introduce unfixable lint errors or version-sync mismatches are rejected. If you already had a local clone before this change, run `npm install` once to install the hook.
 
 ### Note on adding [endpoints](https://github.com/mailgun/mailgun-mcp-server/blob/main/src/endpoints.ts)
-When adding a new endpoint if you use a plain string for it's definition it will default to being tagged with the  `send` product type in the `_meta` field.  If you would like to tag it as a different product use the object version of the `EndpointEntry` type.
+
+When adding a new endpoint if you use a plain string for it's definition it will default to being tagged with the `send` product type in the `_meta` field. If you would like to tag it as a different product use the object version of the `EndpointEntry` type.
 
 ## Security Considerations
 
 ### API key isolation
 
-Your Mailgun API key is passed as an environment variable and is never exposed to the AI model itself — it is only used by the MCP server process to authenticate requests. The server does not log API keys, request parameters, or response data.
+Your Mailgun API key is passed as an environment variable and is never exposed to the AI model itself. It is only used by the MCP server process to authenticate requests. The server does not log API keys, request parameters, or response data.
 
 ### Local execution
 
@@ -394,15 +435,15 @@ The server runs locally on your machine. All communication with the Mailgun API 
 
 ### API key permissions
 
-Use a dedicated Mailgun API key with permissions scoped to only the operations you need. The server exposes read and update operations but does not expose any delete operations, which limits the blast radius of unintended actions.
+Use a dedicated Mailgun API key with permissions scoped to only the operations you need. The server exposes read and update operations and does not expose any delete operations, which limits the blast radius of unintended actions. Note that `run_email_preview_qa` is a create operation: it provisions a remote Mailgun preview test and consumes preview quota, so scope keys accordingly.
 
 ### Rate limiting
 
-The server does not implement client-side rate limiting. Each tool call from the AI translates directly into a Mailgun API request. The server relies on Mailgun's server-side rate limits to prevent abuse — requests that exceed those limits will return an error to the AI assistant.
+The server does not implement client-side rate limiting. Each tool call from the AI translates directly into a Mailgun API request. The server relies on Mailgun's server-side rate limits to prevent abuse; requests that exceed those limits will return an error to the AI assistant.
 
 ### Prompt injection
 
-As with any MCP server, a crafted or adversarial prompt could trick the AI assistant into calling operations you did not intend — for example, modifying tracking settings or reading mailing list members. Review your AI assistant's tool-call confirmations before approving actions, especially in untrusted prompt contexts.
+As with any MCP server, a crafted or adversarial prompt could trick the AI assistant into calling operations you did not intend, such as modifying tracking settings, creating a preview test, or reading mailing list members. Review your AI assistant's tool-call confirmations before approving actions, especially in untrusted prompt contexts.
 
 ### Webhook URLs
 
@@ -418,7 +459,7 @@ The MCP server communicates over stdio. Refer to the [MCP Debugging Guide](https
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE) for details.
+Apache 2.0. See [LICENSE](LICENSE) for details.
 
 ## Contributing
 
