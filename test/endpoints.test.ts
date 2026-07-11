@@ -198,7 +198,11 @@ describe("new endpoint validation against OpenAPI spec", () => {
 
 describe("Inspect email preview QA read primitives", () => {
   const inspectPrimitives: { endpoint: string; toolName: string; summary: string }[] = [
-    { endpoint: "GET /v2/preview/tests", toolName: "list_preview_tests", summary: "List/Search Tests V2" },
+    {
+      endpoint: "GET /v2/preview/tests",
+      toolName: "list_preview_tests",
+      summary: "List/Search Tests V2",
+    },
     {
       endpoint: "GET /v2/preview/tests/{test_id}",
       toolName: "get_preview_test_status",
@@ -249,12 +253,15 @@ describe("Inspect email preview QA read primitives", () => {
     expect(result!.operation.summary).toBe(summary);
   });
 
-  test.each(inspectPrimitives)("$toolName is allowlisted with the inspect tag", ({ endpoint, toolName }) => {
-    const p = parsed.get(endpoint);
-    expect(p).toBeDefined();
-    expect(p!.toolNameOverride).toBe(toolName);
-    expect(p!.tags).toEqual(["inspect"]);
-  });
+  test.each(inspectPrimitives)(
+    "$toolName is allowlisted with the inspect tag",
+    ({ endpoint, toolName }) => {
+      const p = parsed.get(endpoint);
+      expect(p).toBeDefined();
+      expect(p!.toolNameOverride).toBe(toolName);
+      expect(p!.tags).toEqual(["inspect"]);
+    },
+  );
 
   test("no create primitive (POST /v2/preview/tests) is allowlisted", () => {
     expect(parsed.has("POST /v2/preview/tests")).toBe(false);
