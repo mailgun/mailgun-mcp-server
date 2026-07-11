@@ -17,7 +17,9 @@ export async function makeMailgunRequest(
   requestPath: string,
   data: Record<string, unknown> | null = null,
   contentType: string = "application/x-www-form-urlencoded",
-  // Optional per-request timeout (ms); omitted leaves existing callers unchanged. No retries.
+  // Optional ABSOLUTE per-request timeout (ms): the whole request must complete
+  // within this wall-clock budget, not merely stay active. Omitting it leaves
+  // existing callers unchanged. Independent of any polling deadline; no retries.
   timeoutMs?: number,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -34,6 +36,17 @@ export async function makeMailgunRequest(
       },
     };
 
+    // Absolute deadline enforced with a single timer, independent of socket
+    // activity, so a response that keeps trickling data can no longer run past the
+    // budget. Cleared once the request settles.
+    let absoluteTimer: NodeJS.Timeout | undefined;
+    const clearAbsoluteTimer = (): void => {
+      if (absoluteTimer !== undefined) {
+        clearTimeout(absoluteTimer);
+        absoluteTimer = undefined;
+      }
+    };
+
     const req = https.request(options, (res) => {
       let responseData = "";
 
@@ -42,6 +55,7 @@ export async function makeMailgunRequest(
       });
 
       res.on("end", () => {
+        clearAbsoluteTimer();
         try {
           const parsedData = JSON.parse(responseData);
           if (res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300) {
@@ -62,13 +76,15 @@ export async function makeMailgunRequest(
     });
 
     req.on("error", (error: Error) => {
+      clearAbsoluteTimer();
       reject(error);
     });
 
     if (timeoutMs !== undefined && timeoutMs > 0) {
-      req.setTimeout(timeoutMs, () => {
+      absoluteTimer = setTimeout(() => {
+        // Abort the whole request; the resulting 'error' rejects the promise.
         req.destroy(new MailgunApiError(`Request timed out after ${timeoutMs}ms`, 0));
-      });
+      }, timeoutMs);
     }
 
     if (data && method !== "GET") {
