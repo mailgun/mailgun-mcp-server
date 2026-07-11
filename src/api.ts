@@ -17,10 +17,7 @@ export async function makeMailgunRequest(
   requestPath: string,
   data: Record<string, unknown> | null = null,
   contentType: string = "application/x-www-form-urlencoded",
-  // Optional per-request timeout in milliseconds. When omitted, behavior is
-  // unchanged for existing callers (Node's default socket behavior, no timeout).
-  // This is a request-level timeout only; it does not add retries and is
-  // independent of any higher-level polling deadline.
+  // Optional per-request timeout (ms); omitted leaves existing callers unchanged. No retries.
   timeoutMs?: number,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -70,8 +67,6 @@ export async function makeMailgunRequest(
 
     if (timeoutMs !== undefined && timeoutMs > 0) {
       req.setTimeout(timeoutMs, () => {
-        // Abort the in-flight request; the resulting error rejects the promise.
-        // No retry is attempted.
         req.destroy(new MailgunApiError(`Request timed out after ${timeoutMs}ms`, 0));
       });
     }

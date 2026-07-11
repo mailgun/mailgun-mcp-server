@@ -1,14 +1,3 @@
-// Shared local helpers for the Email Preview QA composites (get_email_preview_qa
-// and run_email_preview_qa). These are intentionally feature-local: V2 paths,
-// status parsing, polling, and count helpers live here, not in a generalized
-// adapter framework.
-//
-// The normalized output shape defined here is the contract that must stay
-// equivalent between the MCP composites and the Mailgun CLI (spec §12, §16.1).
-// It contains mechanical counts and result references only — never a
-// Mailgun-authored pass/fail verdict, never raw upstream payloads, never HTML,
-// and never individual issue records.
-
 // --- Vocabulary ---
 
 export type RenderStatus = "complete" | "processing" | "partial" | "unknown";
@@ -41,7 +30,7 @@ export interface PreviewWarning {
   message: string | null;
 }
 
-// --- Output shape (the parity contract) ---
+// --- Output shape ---
 
 export interface LinkImageCheckSummary {
   status: CheckLifecycle;
@@ -55,8 +44,7 @@ export interface LinkImageCheckSummary {
 export interface AccessibilityCheckSummary {
   status: CheckLifecycle;
   result_id: string | null;
-  // Headline counts are INSTANCE-level (one WCAG problem occurrence); rule counts
-  // are the number of distinct rules that flagged, kept as a secondary signal.
+  // Headline counts are instance-level; *_rules are distinct-rule counts.
   failures: number;
   failure_rules: number;
   needs_review: number;
@@ -65,16 +53,13 @@ export interface AccessibilityCheckSummary {
   needs_review_by_severity: Record<string, number>;
 }
 
-// Support-breakdown objects are passed through from the authoritative analyze
-// `meta` block (e.g. { supported, partial_support, unsupported, unknown }); we do
-// not recompute them.
+// Passed through from the analyze `meta` block; not recomputed.
 export type SupportBreakdown = Record<string, unknown>;
 
 export interface CodeAnalysisCheckSummary {
   status: CheckLifecycle;
   result_id: string | null;
-  // `count` is the canonical total from analyze `meta.count` (== number of
-  // detected features). `instances` is the sum of per-feature occurrences.
+  // count = analyze meta.count (feature total); instances = sum of occurrences.
   count: number;
   instances: number;
   by_feature: Record<string, number>;
@@ -107,7 +92,7 @@ export interface EmailPreviewQaOutput {
 
 const PRODUCT = "Inspect";
 
-// --- Small value helpers (defensive against upstream shape drift) ---
+// --- Value helpers ---
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -127,8 +112,7 @@ function str(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-// Native severity/impact label, case-normalized only. Never mapped onto a
-// shared Mailgun scale (spec §12.4). Missing/blank labels bucket as "unknown".
+// Native severity/impact label, lowercased only. Blank/missing bucket as "unknown".
 function severityLabel(value: unknown): string {
   const s = typeof value === "string" ? value.trim().toLowerCase() : "";
   return s.length > 0 ? s : "unknown";
@@ -170,8 +154,7 @@ export interface CheckReference {
   resultId: string | null;
 }
 
-// Extract, per check, whether it was requested, whether its job errored, and
-// the result id used to build the allowlisted detail path. A `null` value under
+// Per check: requested?, job errored?, and the result id. A null under
 // content_checking means the check was not requested.
 export function extractCheckResultIds(render: unknown): Record<CheckName, CheckReference> {
   const cc = asRecord(asRecord(render).content_checking);
@@ -190,9 +173,7 @@ export function extractCheckResultIds(render: unknown): Record<CheckName, CheckR
   return result;
 }
 
-// Build the allowlisted result path from a validated result id. We never blindly
-// follow an upstream `self`; we construct the known path on the configured host
-// (spec §11.4).
+// Construct the known allowlisted path from a validated result id; never follow an upstream `self`.
 export function checkResultPath(name: CheckName, resultId: string): string {
   const id = encodeURIComponent(resultId);
   switch (name) {
@@ -207,7 +188,7 @@ export function checkResultPath(name: CheckName, resultId: string): string {
   }
 }
 
-// --- Check fetch outcome (produced by the poller, consumed by the builder) ---
+// --- Check fetch outcome ---
 
 export type CheckFetchStatus = "ok" | "not_found" | "error" | "not_fetched";
 
@@ -216,11 +197,7 @@ export interface CheckFetch {
   payload?: unknown;
 }
 
-// Read the per-check completion signal from the DETAIL payload's meta.status.
-// The status/render endpoint's per-check meta can be stale, so we trust the
-// detail payload. Casing is inconsistent across checks ("Completed" vs
-// "Complete"), so match case-insensitively by prefix. A missing meta.status on a
-// 200 response is treated as complete (we have a materialized payload).
+// Completion signal from the detail payload's meta.status (case-insensitive; missing = complete).
 export function detailStatus(payload: unknown): "complete" | "processing" {
   const raw = severityLabel(asRecord(asRecord(payload).meta).status);
   if (
@@ -234,11 +211,8 @@ export function detailStatus(payload: unknown): "complete" | "processing" {
   return "complete";
 }
 
-// True once a requested check has reached a state we will not poll past: its job
-// errored, its detail payload is complete, or its detail endpoint is
-// unavailable. A check whose reference has not materialized yet, or whose detail
-// payload still reports "processing", is NOT terminal. Checks are independent of
-// per-client rendering, so a slow render never keeps a settled check pending.
+// A requested check is terminal once its job errored, its detail is complete, or
+// its endpoint is unavailable. Independent of per-client rendering.
 export function isCheckTerminal(ref: CheckReference, fetch: CheckFetch): boolean {
   if (!ref.requested) return true;
   if (ref.hasErrors) return true;
@@ -248,9 +222,8 @@ export function isCheckTerminal(ref: CheckReference, fetch: CheckFetch): boolean
   return false; // not_fetched
 }
 
-// Lifecycle is derived from the reference + the detail fetch outcome. `timedOut`
-// only affects checks whose reference never materialized: at a timeout they are
-// still "processing"; otherwise a missing reference is genuinely "unavailable".
+// Derived from the reference + detail fetch. `timedOut` only affects checks whose
+// reference never materialized.
 export function normalizeCheckLifecycle(
   ref: CheckReference,
   fetch: CheckFetch,
@@ -262,10 +235,10 @@ export function normalizeCheckLifecycle(
   if (fetch.status === "ok") return detailStatus(fetch.payload) === "processing" ? "processing" : "complete";
   if (fetch.status === "not_found") return "unavailable";
   if (fetch.status === "error") return "unavailable";
-  return "processing"; // requested, referenced, but not fetched by the deadline
+  return "processing"; // referenced but not fetched by the deadline
 }
 
-// --- Issue counters (traceable to V2 schema fields) ---
+// --- Issue counters ---
 
 interface LinkImageCounts {
   passes: number;
@@ -308,10 +281,8 @@ interface AccessibilityCounts {
   needs_review_by_severity: Record<string, number>;
 }
 
-// Accessibility failures/needs_review are grouped by RULE, each carrying an
-// instances[] array. We count INSTANCES as the headline (one occurrence of a
-// problem) and keep the rule count as a secondary signal. A rule entry with no
-// instances[] counts as a single occurrence.
+// Rules carry an instances[] array. Count instances as the headline and rules as a
+// secondary signal; a rule with no instances[] counts as one occurrence.
 function countRuleGroups(
   entries: unknown[],
 ): { instances: number; rules: number; bySeverity: Record<string, number> } {
@@ -338,7 +309,6 @@ export function countAccessibilityIssues(payload: unknown): AccessibilityCounts 
     failures_by_severity: {},
     needs_review_by_severity: {},
   };
-  // items is an array of result groups.
   for (const group of asArray(asRecord(payload).items)) {
     const record = asRecord(group);
     const f = countRuleGroups(asArray(record.failures));
@@ -363,11 +333,8 @@ interface CodeAnalysisCounts {
   market_support: Record<string, unknown>;
 }
 
-// Code-analysis counting uses the authoritative analyze `meta` block confirmed
-// against the live V2 API: `meta.count` is the canonical total (== number of
-// detected features), and `meta.*_support` are precomputed aggregates we pass
-// through verbatim. `instances` (sum of per-feature occurrences) and `by_feature`
-// are derived directly from items.features for drill-down.
+// meta.count is the canonical total (feature count); meta.*_support pass through
+// verbatim. instances/by_feature are derived from items.features for drill-down.
 export function countCodeAnalysisIssues(payload: unknown): CodeAnalysisCounts {
   const meta = asRecord(asRecord(payload).meta);
   const features = asArray(asRecord(asRecord(payload).items).features);
@@ -403,22 +370,19 @@ export function normalizeWarnings(create: unknown): PreviewWarning[] {
   });
 }
 
-// --- Create request (used by the run composite) ---
+// --- Create request ---
 
 export interface PreviewCreateInput {
   subject: string;
   html: string;
   clients?: readonly string[];
-  // Which structured checks to enable. Defaults to all four when undefined; an
-  // empty array means "no checks".
+  // Undefined defaults to all four; an empty array means "no checks".
   contentChecks?: readonly CheckName[];
   referenceId?: string;
 }
 
-// Build the JSON body for POST /v2/preview/tests. Only the HTML source is used
-// (spec §9.1). `clients` is omitted when absent, `content_checking` always sends
-// explicit booleans for all four checks, and `reference_id` is omitted when
-// absent (spec §10).
+// Body for POST /v2/preview/tests. HTML-only source; content_checking sends
+// explicit booleans for all four; clients/reference_id omitted when absent.
 export function buildPreviewCreateRequest(input: PreviewCreateInput): Record<string, unknown> {
   const body: Record<string, unknown> = { subject: input.subject, html: input.html };
   if (input.clients && input.clients.length > 0) body.clients = [...input.clients];
@@ -436,7 +400,7 @@ export function extractCreatedTestId(created: unknown): string | null {
   return str(asRecord(created).id);
 }
 
-// --- Output builder (pure) ---
+// --- Output builder ---
 
 export interface BuildOutputParams {
   testId: string;
@@ -460,9 +424,7 @@ export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPrevi
       impact: "Per-client completion status becomes available once the preview finishes processing.",
     });
   } else if (renderState.processing.length > 0) {
-    // Per-client rendering is independent of content checks: a slow/stuck client
-    // does not block the result. We report it as a non-fatal gap (mirroring the
-    // Inspect UI, which marks missing clients rather than blocking).
+    // Slow/stuck client renders don't block results; report as a non-fatal gap (like the Inspect UI).
     dataGaps.push({
       code: "render_incomplete",
       product: PRODUCT,
@@ -546,8 +508,8 @@ export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPrevi
     });
   }
 
-  // Cross-check issue aggregates (link/image/accessibility failures). Code
-  // analysis is reported separately and not folded into these severity totals.
+  // Cross-check aggregates fold link/image/accessibility failures only; code
+  // analysis is reported separately.
   const byCheck: Record<string, number> = {};
   const bySeverity: Record<string, number> = {};
   const byCheckAndSeverity: Record<string, Record<string, number>> = {};
@@ -662,9 +624,8 @@ function isNotFound(error: unknown): boolean {
   return status === 404;
 }
 
-// Fetch the referenced structured-check results concurrently (bounded — at most
-// four checks). A requested check with no reference yet, or whose job errored, is
-// left unfetched. Independent of per-client rendering.
+// Fetch referenced check results concurrently (at most four). Unreferenced or
+// errored checks are left unfetched.
 async function fetchCheckResults(
   refs: Record<CheckName, CheckReference>,
   deps: PollDeps,
@@ -688,11 +649,9 @@ async function fetchCheckResults(
   return fetches;
 }
 
-// Poll until every REQUESTED content check reaches a terminal state (complete,
-// job_failed, or unavailable) or the deadline passes. Completion is driven by the
-// checks, NOT by per-client rendering: a slow/stuck client can keep the render
-// "processing" indefinitely, so we never block on it (mirrors the Inspect UI).
-// Only GETs are issued here; creation happens outside this function.
+// Poll until every requested check is terminal or the deadline passes. Completion
+// is driven by checks, not per-client rendering (a slow client never blocks).
+// GETs only; creation happens outside this function.
 export async function pollEmailPreviewQa(
   params: PollParams,
   deps: PollDeps,

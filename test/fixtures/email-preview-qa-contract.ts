@@ -1,37 +1,21 @@
-// Shared Email Preview QA contract fixtures (G0, revised after live validation).
+// Shared Email Preview QA contract fixtures (revised after live validation).
 //
-// This file is intentionally byte-identical between `mailgun-mcp-server`
-// (test/fixtures/email-preview-qa-contract.ts) and `mailgun-cli`
-// (src/fixtures/email-preview-qa-contract.ts). The same fixture must produce
-// equivalent normalized fields in both repos (spec §16.1), so keep the two
-// copies in sync whenever either changes.
+// Byte-identical between `mailgun-mcp-server` (test/fixtures/) and `mailgun-cli`
+// (src/fixtures/); the same fixture must normalize to equivalent fields in both,
+// so keep the two copies in sync. Dependency-free plain object literals so both
+// Vitest (MCP) and node:test (CLI) can consume them without shims.
 //
-// It is dependency-free (plain object literals, no imports) so it can be
-// consumed by Vitest (MCP) and node:test (CLI) without adapter shims.
-//
-// Shapes are grounded in REAL V2 responses captured from a live US demo account
-// on 2026-07-10 (test 8Tl32…). Values are synthetic/trimmed and safe to commit;
-// no live credentials or real customer content.
-//
-// Validated contract facts baked into these fixtures:
-//   - Each structured-check detail payload carries meta.status, with INCONSISTENT
-//     casing across checks ("Completed" vs "Complete"); matching must be
-//     case-insensitive prefix. The render/status endpoint's per-check meta.status
-//     can be STALE, so lifecycle is driven off the DETAIL payload, not the status
-//     endpoint.
-//   - Content checks complete independently of per-client rendering. A single
-//     slow/stuck client keeps the render "processing" (potentially forever), so
-//     completion is driven by the CHECKS, not the render. Stragglers are reported
-//     per-client + a non-fatal render_incomplete data gap (mirrors the Inspect UI,
-//     which marks missing clients rather than blocking the whole result).
-//   - Code analysis exposes an authoritative meta.count (== number of features)
-//     plus meta.application_support / inbox_provider_support / market_support.
-//     meta.count is the canonical total (NOT the instance sum).
-//   - The analyze detail endpoint is keyed by the code_analysis result_id
-//     (content_checking.code_analysis.items.id), NOT the test_id.
-//   - Accessibility failures/needs_review are grouped by RULE, each carrying an
-//     instances[] array. The headline count is INSTANCES; rule counts are kept
-//     as a secondary field.
+// Grounded in real V2 responses (live US demo account, 2026-07-10); values are
+// synthetic/trimmed and safe to commit. Validated facts encoded here:
+//   - Detail payloads carry meta.status with inconsistent casing (match
+//     case-insensitively); the render endpoint's per-check status can be stale,
+//     so lifecycle is driven off the detail payload.
+//   - Checks complete independently of per-client rendering; a slow client is
+//     reported per-client + a non-fatal render_incomplete gap (like the Inspect UI).
+//   - code_analysis meta.count is the canonical total (features), not the instance
+//     sum; analyze detail is keyed by the code_analysis result_id, not test_id.
+//   - Accessibility groups by rule (instances[] each); headline count is instances,
+//     rule counts secondary.
 
 // ---------------------------------------------------------------------------
 // Client ids reused across fixtures.
@@ -438,7 +422,7 @@ export const API_ERROR_5XX = { message: 'Internal server error' } as const;
 
 // 14. Unexpected structured-check 404: a referenced result endpoint returns 404.
 // Treat as unavailable + data gap; do NOT retry-on-404 unless Inspect confirms it
-// as a supported contract (spec §11.5, release gate).
+// as a supported contract.
 export const CHECK_RESULT_404 = {
   scenario: 'unexpected_structured_check_404',
   status_code: 404,
