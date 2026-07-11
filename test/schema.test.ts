@@ -142,9 +142,7 @@ describe("processParameters()", () => {
 describe("buildParamsSchema()", () => {
   test("returns { paramsSchema, keyMapping } shape", () => {
     const operation: OpenApiOperation = {
-      parameters: [
-        { name: "domain_name", in: "path", required: true, schema: { type: "string" } },
-      ],
+      parameters: [{ name: "domain_name", in: "path", required: true, schema: { type: "string" } }],
     };
 
     const result = buildParamsSchema(operation, {});
@@ -172,9 +170,7 @@ describe("buildParamsSchema()", () => {
 
   test("builds schema including request body properties", () => {
     const operation: OpenApiOperation = {
-      parameters: [
-        { name: "domain_name", in: "path", required: true, schema: { type: "string" } },
-      ],
+      parameters: [{ name: "domain_name", in: "path", required: true, schema: { type: "string" } }],
       requestBody: {
         content: {
           "application/x-www-form-urlencoded": {
