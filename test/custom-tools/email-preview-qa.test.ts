@@ -1,469 +1,325 @@
-import { describe, test, expect } from "vitest";
+import { describe, expect, test } from "vitest";
+import { MailgunApiError } from "../../src/api.js";
 import {
-  normalizeRenderState,
-  extractCheckResultIds,
-  checkResultPath,
-  detailStatus,
-  isCheckTerminal,
-  normalizeCheckLifecycle,
-  countLinkValidationIssues,
-  countImageValidationIssues,
-  countAccessibilityIssues,
-  countCodeAnalysisIssues,
-  buildEmailPreviewQaOutput,
-  type CheckReference,
-  type CheckFetch,
+  CHECK_NAMES,
+  collectEmailPreviewQa,
   type CheckName,
+  type PollDeps,
 } from "../../src/custom-tools/email-preview-qa.js";
 import {
+  ACCESSIBILITY_RESULT,
+  CODE_ANALYSIS_PROCESSING,
+  CODE_ANALYSIS_RESULT,
+  IMAGE_RESULT,
+  LINK_RESULT,
+  RENDER_CHECK_REFERENCE_MISSING,
   RENDER_COMPLETE,
-  RENDER_PROCESSING,
+  RENDER_EMPTY,
   RENDER_PARTIAL,
   RENDER_STRAGGLER,
-  RENDER_EMPTY,
-  RENDER_CHECK_LIFECYCLE,
-  RENDER_CHECK_REFERENCE_MISSING,
-  LINK_RESULT,
-  IMAGE_RESULT,
-  ACCESSIBILITY_RESULT,
-  CODE_ANALYSIS_RESULT,
-  CODE_ANALYSIS_PROCESSING,
 } from "../fixtures/email-preview-qa-contract.js";
 
-describe("normalizeRenderState", () => {
-  test("complete render", () => {
-    const s = normalizeRenderState(RENDER_COMPLETE);
-    expect(s.status).toBe("complete");
-    expect(s.completed).toHaveLength(3);
-    expect(s.processing).toHaveLength(0);
-    expect(s.bounced).toHaveLength(0);
-  });
+type Route = unknown | (() => unknown);
 
-  test("processing render", () => {
-    expect(normalizeRenderState(RENDER_PROCESSING).status).toBe("processing");
-  });
-
-  test("partial render (a client bounced)", () => {
-    const s = normalizeRenderState(RENDER_PARTIAL);
-    expect(s.status).toBe("partial");
-    expect(s.bounced).toEqual(["lotus_notes"]);
-  });
-
-  test("empty render is unknown", () => {
-    expect(normalizeRenderState(RENDER_EMPTY).status).toBe("unknown");
-  });
-});
-
-describe("extractCheckResultIds", () => {
-  test("all-checks render exposes every result id", () => {
-    const refs = extractCheckResultIds(RENDER_COMPLETE);
-    expect(refs.link_validation).toEqual({
-      requested: true,
-      exposed: true,
-      hasErrors: false,
-      resultId: "link_001",
-    });
-    expect(refs.code_analysis.resultId).toBe("code_001");
-  });
-
-  test("lifecycle render distinguishes job_failed, not_requested, and missing refs", () => {
-    const refs = extractCheckResultIds(RENDER_CHECK_LIFECYCLE);
-    expect(refs.link_validation.resultId).toBe("link_001");
-    expect(refs.image_validation).toEqual({
-      requested: true,
-      exposed: true,
-      hasErrors: true,
-      resultId: null,
-    });
-    expect(refs.accessibility).toEqual({
-      requested: false,
-      exposed: false,
-      hasErrors: false,
-      resultId: null,
-    });
-    expect(refs.code_analysis.resultId).toBe("code_pending");
-  });
-
-  test("exposed-but-empty reference is requested, exposed, with a null result id", () => {
-    const refs = extractCheckResultIds(RENDER_CHECK_REFERENCE_MISSING);
-    expect(refs.image_validation).toEqual({
-      requested: true,
-      exposed: true,
-      hasErrors: false,
-      resultId: null,
-    });
-    // Explicit null stays not_requested.
-    expect(refs.accessibility).toEqual({
-      requested: false,
-      exposed: false,
-      hasErrors: false,
-      resultId: null,
-    });
-  });
-
-  test("explicit null is not_requested; absent-but-requested is pending", () => {
-    // First status read before any content_checking property has materialized.
-    const render = {
-      completed: ["gmail_chrome"],
-      processing: [],
-      bounced: [],
-      content_checking: {},
-    };
-    const requested = new Set<CheckName>(["link_validation", "image_validation"]);
-    const refs = extractCheckResultIds(render, requested);
-    // Requested but absent -> pending (not exposed, not terminated after one read).
-    expect(refs.link_validation).toEqual({
-      requested: true,
-      exposed: false,
-      hasErrors: false,
-      resultId: null,
-    });
-    // Not requested and absent -> not requested.
-    expect(refs.accessibility.requested).toBe(false);
-  });
-
-  test("without a requested set, an absent property is treated as pending", () => {
-    const render = {
-      completed: ["gmail_chrome"],
-      processing: [],
-      bounced: [],
-      content_checking: {},
-    };
-    const refs = extractCheckResultIds(render);
-    expect(refs.link_validation).toEqual({
-      requested: true,
-      exposed: false,
-      hasErrors: false,
-      resultId: null,
-    });
-  });
-});
-
-describe("checkResultPath builds allowlisted paths", () => {
-  test.each([
-    ["link_validation", "/v1/inspect/links/abc"],
-    ["image_validation", "/v1/inspect/images/abc"],
-    ["accessibility", "/v1/inspect/accessibility/abc"],
-    ["code_analysis", "/v1/inspect/analyze/abc"],
-  ] as [CheckName, string][])("%s", (name, expected) => {
-    expect(checkResultPath(name, "abc")).toBe(expected);
-  });
-});
-
-describe("detailStatus reads the check's own meta.status (case-insensitive)", () => {
-  test("Completed / Complete are complete", () => {
-    expect(detailStatus(LINK_RESULT)).toBe("complete");
-    expect(detailStatus(IMAGE_RESULT)).toBe("complete");
-  });
-  test("Processing is processing", () => {
-    expect(detailStatus(CODE_ANALYSIS_PROCESSING)).toBe("processing");
-  });
-  test("missing meta is treated as complete (payload materialized)", () => {
-    expect(detailStatus({})).toBe("complete");
-  });
-});
-
-describe("isCheckTerminal drives polling independently of render", () => {
-  const ref: CheckReference = { requested: true, exposed: true, hasErrors: false, resultId: "x" };
-  test("complete detail payload is terminal", () => {
-    expect(isCheckTerminal(ref, { status: "ok", payload: LINK_RESULT })).toBe(true);
-  });
-  test("processing detail payload is not terminal", () => {
-    expect(isCheckTerminal(ref, { status: "ok", payload: CODE_ANALYSIS_PROCESSING })).toBe(false);
-  });
-  test("not requested is terminal; absent-but-requested is not; exposed-empty is", () => {
-    expect(
-      isCheckTerminal(
-        { requested: false, exposed: false, hasErrors: false, resultId: null },
-        { status: "not_fetched" },
-      ),
-    ).toBe(true);
-    // Absent-but-requested (not exposed) keeps polling.
-    expect(
-      isCheckTerminal(
-        { requested: true, exposed: false, hasErrors: false, resultId: null },
-        { status: "not_fetched" },
-      ),
-    ).toBe(false);
-    // Exposed-but-empty is terminal (unavailable).
-    expect(
-      isCheckTerminal(
-        { requested: true, exposed: true, hasErrors: false, resultId: null },
-        { status: "not_fetched" },
-      ),
-    ).toBe(true);
-  });
-});
-
-describe("normalizeCheckLifecycle", () => {
-  const requested: CheckReference = {
-    requested: true,
-    exposed: true,
-    hasErrors: false,
-    resultId: "x",
+function fakeDeps(routes: Record<string, Route>): { deps: PollDeps; requests: string[] } {
+  let current = 0;
+  const requests: string[] = [];
+  return {
+    requests,
+    deps: {
+      request: async (method, path) => {
+        requests.push(`${method} ${path}`);
+        const route = routes[path];
+        if (route === undefined) throw new MailgunApiError("not found", 404);
+        return typeof route === "function" ? (route as () => unknown)() : route;
+      },
+      now: () => current,
+      sleep: async (ms) => {
+        current += ms;
+      },
+    },
   };
-  test("not requested", () => {
-    expect(
-      normalizeCheckLifecycle(
-        { requested: false, exposed: false, hasErrors: false, resultId: null },
-        { status: "not_fetched" },
-      ),
-    ).toBe("not_requested");
-  });
-  test("job failed", () => {
-    expect(
-      normalizeCheckLifecycle(
-        { requested: true, exposed: true, hasErrors: true, resultId: null },
-        { status: "not_fetched" },
-      ),
-    ).toBe("job_failed");
-  });
-  test("complete when fetched ok and detail is complete", () => {
-    expect(normalizeCheckLifecycle(requested, { status: "ok", payload: LINK_RESULT })).toBe(
-      "complete",
+}
+
+const STATUS_PATH = "/v2/preview/tests/preview_test_001";
+const RESULT_ROUTES: Record<string, unknown> = {
+  "/v1/inspect/links/link_001": LINK_RESULT,
+  "/v1/inspect/images/image_001": IMAGE_RESULT,
+  "/v1/inspect/accessibility/access_001": ACCESSIBILITY_RESULT,
+  "/v1/inspect/analyze/code_001": CODE_ANALYSIS_RESULT,
+};
+
+function renderFor(name: CheckName, id: string): Record<string, unknown> {
+  const contentChecking = Object.fromEntries(CHECK_NAMES.map((check) => [check, null]));
+  contentChecking[name] = { items: { id } };
+  return {
+    completed: ["gmail_chrome"],
+    processing: [],
+    bounced: [],
+    content_checking: contentChecking,
+  };
+}
+
+describe("collectEmailPreviewQa", () => {
+  test("returns the complete QA summary through one workflow-facing seam", async () => {
+    const { deps, requests } = fakeDeps({ [STATUS_PATH]: RENDER_COMPLETE, ...RESULT_ROUTES });
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 30_000 },
+      deps,
     );
-  });
-  test("processing when fetched ok but detail still processing", () => {
-    expect(
-      normalizeCheckLifecycle(requested, { status: "ok", payload: CODE_ANALYSIS_PROCESSING }),
-    ).toBe("processing");
-  });
-  test("unavailable on 404", () => {
-    expect(normalizeCheckLifecycle(requested, { status: "not_found" })).toBe("unavailable");
-  });
-  test("processing when referenced but not fetched by the deadline", () => {
-    expect(normalizeCheckLifecycle(requested, { status: "not_fetched" })).toBe("processing");
-  });
-  test("null result id: exposed-empty is unavailable, absent-pending is processing", () => {
-    const exposedEmpty: CheckReference = {
-      requested: true,
-      exposed: true,
-      hasErrors: false,
-      resultId: null,
-    };
-    const absentPending: CheckReference = {
-      requested: true,
-      exposed: false,
-      hasErrors: false,
-      resultId: null,
-    };
-    expect(normalizeCheckLifecycle(exposedEmpty, { status: "not_fetched" })).toBe("unavailable");
-    expect(normalizeCheckLifecycle(absentPending, { status: "not_fetched" })).toBe("processing");
-  });
-});
 
-describe("issue counters trace to V2 fields", () => {
-  test("link validation", () => {
-    const c = countLinkValidationIssues(LINK_RESULT);
-    expect(c.passes).toBe(2);
-    expect(c.failures).toBe(2);
-    expect(c.informational).toBe(1);
-    expect(c.by_severity).toEqual({ critical: 1, unknown: 1 });
-  });
-
-  test("image validation", () => {
-    const c = countImageValidationIssues(IMAGE_RESULT);
-    expect(c.passes).toBe(1);
-    expect(c.failures).toBe(1);
-    expect(c.informational).toBe(1);
-    expect(c.by_severity).toEqual({ moderate: 1 });
-  });
-
-  test("accessibility counts instances (headline) and rules (secondary)", () => {
-    const c = countAccessibilityIssues(ACCESSIBILITY_RESULT);
-    expect(c.failures).toBe(3);
-    expect(c.failure_rules).toBe(2);
-    expect(c.needs_review).toBe(1);
-    expect(c.needs_review_rules).toBe(1);
-    expect(c.failures_by_severity).toEqual({ serious: 2, critical: 1 });
-    expect(c.needs_review_by_severity).toEqual({ moderate: 1 });
-  });
-
-  test("code analysis uses meta.count and passes support aggregates through", () => {
-    const c = countCodeAnalysisIssues(CODE_ANALYSIS_RESULT);
-    expect(c.count).toBe(2);
-    expect(c.instances).toBe(3);
-    expect(c.by_feature).toEqual({ "html-width": 2, "target-attribute": 1 });
-    expect(c.application_support).toEqual(CODE_ANALYSIS_RESULT.meta.application_support);
-    expect(c.inbox_provider_support).toEqual(CODE_ANALYSIS_RESULT.meta.inbox_provider_support);
-    expect(c.market_support).toEqual(CODE_ANALYSIS_RESULT.meta.market_support);
-  });
-});
-
-describe("buildEmailPreviewQaOutput", () => {
-  const okFetch = (payload: unknown): CheckFetch => ({ status: "ok", payload });
-
-  test("complete render with all checks aggregates counts and references", () => {
-    const refs = extractCheckResultIds(RENDER_COMPLETE);
-    const output = buildEmailPreviewQaOutput({
-      testId: "preview_test_001",
-      render: RENDER_COMPLETE,
-      refs,
-      fetches: {
-        link_validation: okFetch(LINK_RESULT),
-        image_validation: okFetch(IMAGE_RESULT),
-        accessibility: okFetch(ACCESSIBILITY_RESULT),
-        code_analysis: okFetch(CODE_ANALYSIS_RESULT),
+    expect(output).toMatchObject({
+      test_id: "preview_test_001",
+      status: "complete",
+      timed_out: false,
+      summary: { total_clients: 3, completed: 3, processing: 0, bounced: 0 },
+      issue_counts: {
+        total: 6,
+        by_check: { link_validation: 2, image_validation: 1, accessibility: 3 },
+        by_severity: { critical: 2, unknown: 1, moderate: 1, serious: 2 },
       },
-      timedOut: false,
+      checks: {
+        link_validation: { status: "complete", result_id: "link_001", failures: 2 },
+        image_validation: { status: "complete", result_id: "image_001", failures: 1 },
+        accessibility: {
+          status: "complete",
+          result_id: "access_001",
+          failures: 3,
+          failure_rules: 2,
+          needs_review: 1,
+        },
+        code_analysis: {
+          status: "complete",
+          result_id: "code_001",
+          count: 2,
+          instances: 3,
+          by_feature: { "html-width": 2, "target-attribute": 1 },
+        },
+      },
     });
+    expect(requests).toHaveLength(5);
+  });
 
-    expect(output.status).toBe("complete");
-    expect(output.timed_out).toBe(false);
-    expect(output.summary).toEqual({ total_clients: 3, completed: 3, processing: 0, bounced: 0 });
-    expect(output.checks.link_validation.status).toBe("complete");
-    expect(output.checks.link_validation.result_id).toBe("link_001");
-    expect(output.checks.accessibility.failures).toBe(3);
-    expect(output.checks.accessibility.needs_review).toBe(1);
-    expect(output.checks.code_analysis.count).toBe(2);
-    expect(output.checks.code_analysis.instances).toBe(3);
-    expect(output.issue_counts.total).toBe(6);
-    expect(output.issue_counts.by_check).toEqual({
-      link_validation: 2,
-      image_validation: 1,
-      accessibility: 3,
+  test.each([
+    {
+      name: "link_validation" as const,
+      id: "link/a",
+      path: "/v1/inspect/links/link%2Fa",
+      payload: LINK_RESULT,
+      expected: {
+        passes: 2,
+        failures: 2,
+        informational: 1,
+        by_severity: { critical: 1, unknown: 1 },
+      },
+    },
+    {
+      name: "image_validation" as const,
+      id: "image/a",
+      path: "/v1/inspect/images/image%2Fa",
+      payload: IMAGE_RESULT,
+      expected: { passes: 1, failures: 1, informational: 1, by_severity: { moderate: 1 } },
+    },
+    {
+      name: "accessibility" as const,
+      id: "access/a",
+      path: "/v1/inspect/accessibility/access%2Fa",
+      payload: ACCESSIBILITY_RESULT,
+      expected: {
+        failures: 3,
+        failure_rules: 2,
+        needs_review: 1,
+        needs_review_rules: 1,
+        failures_by_severity: { serious: 2, critical: 1 },
+      },
+    },
+    {
+      name: "code_analysis" as const,
+      id: "code/a",
+      path: "/v1/inspect/analyze/code%2Fa",
+      payload: CODE_ANALYSIS_RESULT,
+      expected: { count: 2, instances: 3, by_feature: { "html-width": 2, "target-attribute": 1 } },
+    },
+  ])("keeps $name path and interpretation behind the shared seam", async (entry) => {
+    const { deps, requests } = fakeDeps({
+      [STATUS_PATH]: renderFor(entry.name, entry.id),
+      [entry.path]: entry.payload,
     });
-    expect(output.issue_counts.by_severity).toEqual({
-      critical: 2,
-      unknown: 1,
-      moderate: 1,
-      serious: 2,
-    });
-    // The code-analysis formula gate is resolved (meta.count); no such data gap.
-    expect(output.data_gaps.map((g) => g.code)).not.toContain(
-      "code_analysis_count_formula_unsupported",
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 30_000 },
+      deps,
     );
-    expect(output.data_gaps).toHaveLength(0);
+
+    expect(requests).toContain(`GET ${entry.path}`);
+    expect(output.checks[entry.name]).toMatchObject({
+      status: "complete",
+      result_id: entry.id,
+      ...entry.expected,
+    });
   });
 
-  test("render straggler does not block; reported as render_incomplete", () => {
-    const refs = extractCheckResultIds(RENDER_STRAGGLER);
-    const output = buildEmailPreviewQaOutput({
-      testId: "preview_test_001",
-      render: RENDER_STRAGGLER,
-      refs,
-      fetches: {
-        link_validation: okFetch(LINK_RESULT),
-        image_validation: okFetch(IMAGE_RESULT),
-        accessibility: okFetch(ACCESSIBILITY_RESULT),
-        code_analysis: okFetch(CODE_ANALYSIS_RESULT),
-      },
-      timedOut: false,
-    });
-    expect(output.timed_out).toBe(false);
-    expect(output.summary.processing).toBe(1);
-    expect(output.checks.link_validation.status).toBe("complete");
-    expect(output.data_gaps.map((g) => g.code)).toContain("render_incomplete");
-    expect(output.data_gaps.map((g) => g.code)).not.toContain("workflow_timed_out");
-  });
+  test.each([
+    [RENDER_PARTIAL, "partial", 1, false, false],
+    [RENDER_STRAGGLER, "processing", 0, true, false],
+    [RENDER_EMPTY, "unknown", 0, false, true],
+  ])(
+    "normalizes client render state and gaps",
+    async (render, status, bounced, hasIncompleteGap, hasUnavailableGap) => {
+      const routes = render === RENDER_EMPTY ? {} : RESULT_ROUTES;
+      const { deps } = fakeDeps({ [STATUS_PATH]: render, ...routes });
+      const output = await collectEmailPreviewQa(
+        { testId: "preview_test_001", timeoutMs: 0 },
+        deps,
+      );
 
-  test("missing reference yields unavailable lifecycle + data gap", () => {
-    const refs = extractCheckResultIds(RENDER_CHECK_REFERENCE_MISSING);
-    const output = buildEmailPreviewQaOutput({
-      testId: "preview_test_013",
-      render: RENDER_CHECK_REFERENCE_MISSING,
-      refs,
-      fetches: {
-        link_validation: okFetch(LINK_RESULT),
-        image_validation: { status: "not_fetched" },
-        accessibility: { status: "not_fetched" },
-        code_analysis: okFetch(CODE_ANALYSIS_RESULT),
-      },
-      timedOut: false,
+      expect(output.status).toBe(status);
+      expect(output.summary.bounced).toBe(bounced);
+      const gapCodes = output.data_gaps.map(({ code }) => code);
+      expect(gapCodes.includes("render_incomplete")).toBe(hasIncompleteGap);
+      expect(gapCodes.includes("render_clients_unavailable")).toBe(hasUnavailableGap);
+    },
+  );
+
+  test("reports unavailable and not-requested checks from one normalization pass", async () => {
+    const { deps } = fakeDeps({
+      [STATUS_PATH]: RENDER_CHECK_REFERENCE_MISSING,
+      "/v1/inspect/links/link_010": LINK_RESULT,
+      "/v1/inspect/analyze/code_013": CODE_ANALYSIS_RESULT,
     });
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 30_000 },
+      deps,
+    );
+
     expect(output.checks.image_validation.status).toBe("unavailable");
     expect(output.checks.accessibility.status).toBe("not_requested");
-    expect(output.data_gaps.map((g) => g.code)).toContain("check_reference_missing");
+    expect(output.data_gaps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "check_reference_missing" })]),
+    );
   });
 
-  test("timeout (a check never settled) adds workflow_timed_out", () => {
-    const refs = extractCheckResultIds(RENDER_PROCESSING);
-    const output = buildEmailPreviewQaOutput({
-      testId: "preview_test_005",
-      render: RENDER_PROCESSING,
-      refs,
-      fetches: {
-        link_validation: { status: "not_fetched" },
-        image_validation: { status: "not_fetched" },
-        accessibility: { status: "not_fetched" },
-        code_analysis: { status: "not_fetched" },
+  test("polls a processing detail until the check completes", async () => {
+    let codeCalls = 0;
+    const { deps, requests } = fakeDeps({
+      [STATUS_PATH]: RENDER_COMPLETE,
+      ...RESULT_ROUTES,
+      "/v1/inspect/analyze/code_001": () => {
+        codeCalls += 1;
+        return codeCalls === 1 ? CODE_ANALYSIS_PROCESSING : CODE_ANALYSIS_RESULT;
       },
-      timedOut: true,
     });
-    expect(output.status).toBe("processing");
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 10_000 },
+      deps,
+    );
+
+    expect(output.checks.code_analysis.status).toBe("complete");
+    expect(requests.filter((request) => request === `GET ${STATUS_PATH}`)).toHaveLength(2);
+  });
+
+  test("returns latest evidence and a gap when the workflow deadline expires", async () => {
+    const { deps } = fakeDeps({
+      [STATUS_PATH]: RENDER_COMPLETE,
+      ...RESULT_ROUTES,
+      "/v1/inspect/analyze/code_001": CODE_ANALYSIS_PROCESSING,
+    });
+    const output = await collectEmailPreviewQa({ testId: "preview_test_001", timeoutMs: 0 }, deps);
+
     expect(output.timed_out).toBe(true);
-    expect(output.checks.link_validation.status).toBe("processing");
-    expect(output.data_gaps.map((g) => g.code)).toContain("workflow_timed_out");
+    expect(output.checks.code_analysis).toMatchObject({ status: "processing", count: 0 });
+    expect(output.data_gaps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "workflow_timed_out" })]),
+    );
   });
 
-  test("a requested client absent from every render array yields a data gap", () => {
-    const refs = extractCheckResultIds(RENDER_COMPLETE);
-    const output = buildEmailPreviewQaOutput({
-      testId: "preview_test_001",
-      render: RENDER_COMPLETE,
-      refs,
-      fetches: {
-        link_validation: okFetch(LINK_RESULT),
-        image_validation: okFetch(IMAGE_RESULT),
-        accessibility: okFetch(ACCESSIBILITY_RESULT),
-        code_analysis: okFetch(CODE_ANALYSIS_RESULT),
-      },
-      timedOut: false,
-      // lotus_notes was requested but does not appear in RENDER_COMPLETE.
-      requestedClients: ["gmail_chrome", "outlook_win", "apple_mail", "lotus_notes"],
+  test("turns a referenced result 404 into an unavailable check and data gap", async () => {
+    const { deps } = fakeDeps({
+      [STATUS_PATH]: RENDER_COMPLETE,
+      ...RESULT_ROUTES,
+      "/v1/inspect/analyze/code_001": undefined,
     });
-    const gap = output.data_gaps.find((g) => g.code === "requested_client_missing");
-    expect(gap).toBeDefined();
-    expect(gap?.message).toContain("lotus_notes");
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 30_000 },
+      deps,
+    );
+
+    expect(output.checks.code_analysis.status).toBe("unavailable");
+    expect(output.data_gaps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "result_endpoint_unavailable" })]),
+    );
   });
 
-  test("a completed code-analysis result without meta.count is a data gap, not an invented count", () => {
-    const refs = extractCheckResultIds(RENDER_COMPLETE);
-    const noCount = {
-      meta: { status: "Completed" },
-      items: { features: [{ slug: "html-width", instances: [{}] }] },
+  test("reports requested clients missing from every render state", async () => {
+    const { deps } = fakeDeps({ [STATUS_PATH]: RENDER_COMPLETE, ...RESULT_ROUTES });
+    const output = await collectEmailPreviewQa(
+      {
+        testId: "preview_test_001",
+        timeoutMs: 30_000,
+        requestedClients: ["gmail_chrome", "missing_client"],
+      },
+      deps,
+    );
+
+    expect(output.data_gaps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "requested_client_missing" })]),
+    );
+  });
+
+  test("reports a missing canonical code-analysis count without inventing one", async () => {
+    const codeWithoutCount = {
+      ...CODE_ANALYSIS_RESULT,
+      meta: { ...CODE_ANALYSIS_RESULT.meta, count: undefined },
     };
-    const output = buildEmailPreviewQaOutput({
-      testId: "preview_test_001",
-      render: RENDER_COMPLETE,
-      refs,
-      fetches: {
-        link_validation: okFetch(LINK_RESULT),
-        image_validation: okFetch(IMAGE_RESULT),
-        accessibility: okFetch(ACCESSIBILITY_RESULT),
-        code_analysis: okFetch(noCount),
-      },
-      timedOut: false,
+    const { deps } = fakeDeps({
+      [STATUS_PATH]: RENDER_COMPLETE,
+      ...RESULT_ROUTES,
+      "/v1/inspect/analyze/code_001": codeWithoutCount,
     });
-    expect(output.checks.code_analysis.count).toBe(0);
-    // instances are still derived even when the headline count is unavailable.
-    expect(output.checks.code_analysis.instances).toBe(1);
-    expect(output.data_gaps.map((g) => g.code)).toContain("code_analysis_count_unavailable");
-  });
-});
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 30_000 },
+      deps,
+    );
 
-describe("native severity/impact casing is preserved", () => {
-  test("mixed-case impact labels keep their API spelling (status matching stays case-insensitive)", () => {
-    const mixedCaseLinks = {
-      meta: { status: "COMPLETED" }, // matched case-insensitively -> complete
+    expect(output.checks.code_analysis).toMatchObject({
+      status: "complete",
+      count: 0,
+      instances: 3,
+    });
+    expect(output.data_gaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "code_analysis_count_unavailable" }),
+      ]),
+    );
+  });
+
+  test("preserves native severity spelling while matching lifecycle case-insensitively", async () => {
+    const mixedCase = {
+      ...LINK_RESULT,
+      meta: { status: "  COMPLETED  " },
       items: {
-        id: "link_mixed",
+        ...LINK_RESULT.items,
         results: [
           {
             passes: [],
             informational: [],
-            failures: [
-              { rule: "a", impact: "Critical" },
-              { rule: "b", impact: "CRITICAL" },
-              { rule: "c", impact: "critical" },
-            ],
+            failures: [{ impact: " Major " }, { impact: "major" }, { impact: "" }],
           },
         ],
       },
     };
-    const c = countLinkValidationIssues(mixedCaseLinks);
-    expect(detailStatus(mixedCaseLinks)).toBe("complete");
-    // Each distinct native spelling is its own bucket; none are lowercased.
-    expect(c.by_severity).toEqual({ Critical: 1, CRITICAL: 1, critical: 1 });
+    const { deps } = fakeDeps({
+      [STATUS_PATH]: renderFor("link_validation", "link_001"),
+      "/v1/inspect/links/link_001": mixedCase,
+    });
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 30_000 },
+      deps,
+    );
+
+    expect(output.checks.link_validation).toMatchObject({
+      status: "complete",
+      failures: 3,
+      by_severity: { Major: 1, major: 1, unknown: 1 },
+    });
   });
 });

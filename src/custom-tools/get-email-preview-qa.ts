@@ -3,8 +3,8 @@ import { z } from "zod";
 import { MailgunApiError } from "../api.js";
 import { META_TAGS_KEY, type Tag } from "../tags.js";
 import {
-  buildEmailPreviewQaOutput,
-  pollEmailPreviewQa,
+  collectEmailPreviewQa,
+  EmailPreviewQaPollError,
   type EmailPreviewQaOutput,
   type PollDeps,
 } from "./email-preview-qa.js";
@@ -49,14 +49,13 @@ export async function runGetEmailPreviewQa(
 ): Promise<EmailPreviewQaOutput> {
   const timeoutMs = resolveTimeoutSeconds(params.timeoutSeconds) * 1000;
   // No requestedChecks: the resume path cannot recover the create-time selection.
-  const poll = await pollEmailPreviewQa({ testId: params.testId, timeoutMs }, deps);
-  return buildEmailPreviewQaOutput({
-    testId: params.testId,
-    render: poll.render,
-    refs: poll.refs,
-    fetches: poll.fetches,
-    timedOut: poll.timedOut,
-  });
+  try {
+    return await collectEmailPreviewQa({ testId: params.testId, timeoutMs }, deps);
+  } catch (error) {
+    // Preserve the read workflow's existing upstream error contract.
+    if (error instanceof EmailPreviewQaPollError) throw error.cause;
+    throw error;
+  }
 }
 
 function buildErrorResponse(

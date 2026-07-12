@@ -301,6 +301,25 @@ describe("runCreateAndPoll", () => {
     expect(posts).toHaveLength(1);
   });
 
+  test("a normalization failure after polling is not mislabeled as a poll failure", async () => {
+    const normalizationFailure = new Error("normalization failed");
+    const linkResult = new Proxy(LINK_RESULT, {
+      get(target, property, receiver) {
+        if (property === "items") throw normalizationFailure;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const { deps } = fakeDeps({
+      createResponse: CREATE_ALL_CHECKS,
+      status: RENDER_COMPLETE,
+      resultRoutes: { ...RESULT_ROUTES, "/v1/inspect/links/link_001": linkResult },
+    });
+
+    await expect(runCreateAndPoll(validateRunInput(baseInput), deps)).rejects.toBe(
+      normalizationFailure,
+    );
+  });
+
   test("an explicit empty content_checks selection terminates after one status read", async () => {
     // With no checks requested, the render exposes no content_checking nodes.
     const renderNoChecks = {
