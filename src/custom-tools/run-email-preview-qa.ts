@@ -22,14 +22,11 @@ import {
   timeoutSecondsSchema,
 } from "./email-preview-qa-runtime.js";
 
-// The CREATE/poll composite: validates input, issues exactly one
-// POST /v2/preview/tests, then reuses the shared poll/build path. Never retries
-// the create (V2 creation is not idempotent).
+// Creates exactly one non-idempotent preview test, then collects its QA summary.
 
 const CREATE_PATH = "/v2/preview/tests";
 
-// Intentional client-side V1 input limit, not a confirmed upstream Inspect maximum.
-// Checked against the UTF-8 byte length before any network access.
+// Client-side UTF-8 limit, not a confirmed upstream Inspect maximum.
 export const MAX_HTML_BYTES = 10 * 1024 * 1024; // 10 MiB
 
 export interface RunEmailPreviewQaInput {
@@ -65,8 +62,7 @@ export class RunEmailPreviewQaError extends Error {
   }
 }
 
-// Pure validation. Throws RunEmailPreviewQaError with an INVALID_* code before
-// any network work happens.
+// Validation raises INVALID_* errors before network work begins.
 export function validateRunInput(raw: RunEmailPreviewQaInput): ValidatedRunInput {
   const subject = typeof raw.subject === "string" ? raw.subject.trim() : "";
   if (subject === "") {
@@ -108,9 +104,7 @@ export function validateRunInput(raw: RunEmailPreviewQaInput): ValidatedRunInput
         "An empty clients array was provided; omit clients entirely to use the Mailgun default set.",
       );
     }
-    // Reject the whole input if any entry is blank/invalid rather than silently
-    // dropping it; a valid id is passed through unchanged (no trimming that could
-    // turn it into a different id), deduplicated by exact string.
+    // Reject invalid clients; preserve valid ids exactly and deduplicate exact matches.
     for (const client of raw.clients) {
       if (typeof client !== "string" || client.trim() === "") {
         throw new RunEmailPreviewQaError(
@@ -158,8 +152,7 @@ export function validateRunInput(raw: RunEmailPreviewQaInput): ValidatedRunInput
   };
 }
 
-// Definitive = Mailgun responded 4xx/5xx. Anything else (timeout/transport) is
-// ambiguous: the POST may have reached Mailgun, so never retry.
+// Only an upstream 4xx/5xx proves rejection; transport failures leave creation ambiguous.
 function isDefinitiveApiError(error: unknown): error is MailgunApiError {
   return error instanceof MailgunApiError && error.statusCode >= 400;
 }
@@ -177,9 +170,7 @@ export async function runCreateAndPoll(
   } catch (error) {
     if (isDefinitiveApiError(error)) {
       const code = error.statusCode === 403 ? "NOT_ENTITLED" : "CREATE_REJECTED";
-      // A definitive 4xx/5xx (including 429/5xx) means creation was rejected and
-      // MAY have consumed quota; reinvoking this tool would POST again, so it is
-      // never retryable. Reconcile via list_preview_tests instead.
+      // Never re-POST after a definitive rejection; reconcile possible quota use by listing tests.
       throw new RunEmailPreviewQaError(
         code,
         error.statusCode === 403
@@ -191,8 +182,7 @@ export async function runCreateAndPoll(
         input.referenceId,
       );
     }
-    // Ambiguous: the create may have reached Mailgun before the failure, so a
-    // second create is unsafe. Not retryable; reconcile via list_preview_tests.
+    // The create may have arrived before transport failed, so reconcile instead of re-POSTing.
     throw new RunEmailPreviewQaError(
       "AMBIGUOUS_CREATE",
       "The create request failed after it may have reached Mailgun. A preview test may have been created; a second create was NOT attempted.",
@@ -234,8 +224,7 @@ export async function runCreateAndPoll(
   } catch (error) {
     if (!(error instanceof EmailPreviewQaPollError)) throw error;
     const cause = error.cause;
-    // The test WAS created; reinvoking this tool would POST again. Not retryable:
-    // resume the existing test with get_email_preview_qa instead.
+    // Creation succeeded, so resume this test instead of re-POSTing.
     throw new RunEmailPreviewQaError(
       "POLL_FAILED_AFTER_CREATE",
       "The preview test was created, but retrieving its status failed.",

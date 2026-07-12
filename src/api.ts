@@ -17,9 +17,7 @@ export async function makeMailgunRequest(
   requestPath: string,
   data: Record<string, unknown> | null = null,
   contentType: string = "application/x-www-form-urlencoded",
-  // Optional ABSOLUTE per-request timeout (ms): the whole request must complete
-  // within this wall-clock budget, not merely stay active. Omitting it leaves
-  // existing callers unchanged. Independent of any polling deadline; no retries.
+  // Absolute request timeout; omitted for existing callers and independent of polling deadlines.
   timeoutMs?: number,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -36,9 +34,7 @@ export async function makeMailgunRequest(
       },
     };
 
-    // Absolute deadline enforced with a single timer, independent of socket
-    // activity, so a response that keeps trickling data can no longer run past the
-    // budget. Cleared once the request settles.
+    // A single timer bounds the whole request even while response data is arriving.
     let absoluteTimer: NodeJS.Timeout | undefined;
     const clearAbsoluteTimer = (): void => {
       if (absoluteTimer !== undefined) {

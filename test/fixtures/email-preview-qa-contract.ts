@@ -1,25 +1,9 @@
-// Shared Email Preview QA contract fixtures (revised after live validation).
-//
-// Byte-identical between `mailgun-mcp-server` (test/fixtures/) and `mailgun-cli`
-// (src/fixtures/); the same fixture must normalize to equivalent fields in both,
-// so keep the two copies in sync. Dependency-free plain object literals so both
-// Vitest (MCP) and node:test (CLI) can consume them without shims.
-//
-// Grounded in real V2 responses (live US demo account, 2026-07-10); values are
-// synthetic/trimmed and safe to commit. Validated facts encoded here:
-//   - Detail payloads carry meta.status with inconsistent casing (match
-//     case-insensitively); the render endpoint's per-check status can be stale,
-//     so lifecycle is driven off the detail payload.
-//   - Checks complete independently of per-client rendering; a slow client is
-//     reported per-client + a non-fatal render_incomplete gap (like the Inspect UI).
-//   - code_analysis meta.count is the canonical total (features), not the instance
-//     sum; analyze detail is keyed by the code_analysis result_id, not test_id.
-//   - Accessibility groups by rule (instances[] each); headline count is instances,
-//     rule counts secondary.
+// Shared payload fixtures mirrored in mailgun-cli; keep their literals in sync.
+// Synthetic values reflect live V2 responses validated on 2026-07-10.
+// Detail status drives check lifecycle independently of client rendering.
+// Code analysis uses meta.count; accessibility headlines count rule instances.
 
-// ---------------------------------------------------------------------------
-// Client ids reused across fixtures.
-// ---------------------------------------------------------------------------
+// Client ids
 
 export const CLIENT_IDS = {
   gmail: 'gmail_chrome',
@@ -28,11 +12,7 @@ export const CLIENT_IDS = {
   lotus: 'lotus_notes'
 } as const;
 
-// ---------------------------------------------------------------------------
-// Content-check reference blocks (as returned inside create + render payloads).
-// Each requested check exposes items.id + items.links.self; a failed check job
-// exposes `errors` instead; a not-requested check is null.
-// ---------------------------------------------------------------------------
+// Check references expose an id, errors, or null when not requested.
 
 const CHECK_REFS_ALL = {
   link_validation: { items: { id: 'link_001', links: { self: '/v1/inspect/links/link_001' } } },
@@ -41,9 +21,7 @@ const CHECK_REFS_ALL = {
   code_analysis: { items: { id: 'code_001', links: { self: '/v1/inspect/analyze/code_001' } } }
 } as const;
 
-// ---------------------------------------------------------------------------
 // 1. Create accepted with all four checks requested.
-// ---------------------------------------------------------------------------
 
 export const CREATE_ALL_CHECKS = {
   id: 'preview_test_001',
@@ -70,16 +48,13 @@ export const CREATE_INVALID_CLIENT_WARNINGS = {
   content_checking: CHECK_REFS_ALL
 } as const;
 
-// 16. Create response missing a test id (must be treated as a runtime error;
-// never poll, never re-POST).
+// 16. Create response missing a test id; never poll or re-POST.
 export const CREATE_MISSING_TEST_ID = {
   reference_id: 'lovable-build-no-id',
   warnings: []
 } as const;
 
-// ---------------------------------------------------------------------------
 // Render states (GET /v2/preview/tests/{test_id}).
-// ---------------------------------------------------------------------------
 
 // 4. Render complete: all clients rendered, none processing, none bounced.
 export const RENDER_COMPLETE = {
@@ -91,8 +66,7 @@ export const RENDER_COMPLETE = {
   content_checking: CHECK_REFS_ALL
 } as const;
 
-// 5. Render processing: at least one client still processing. Under the revised
-// model this does NOT block completion — checks drive it.
+// 5. Client rendering remains in progress but does not block completed checks.
 export const RENDER_PROCESSING = {
   subject: 'June campaign',
   date: 1782309720,
@@ -112,9 +86,7 @@ export const RENDER_PARTIAL = {
   content_checking: CHECK_REFS_ALL
 } as const;
 
-// 6b. Render straggler: most clients done, one stuck "processing" indefinitely,
-// while all checks are complete. The workflow must return non-blocked, report the
-// straggler per-client, and emit a render_incomplete data gap (mirrors the UI).
+// 6b. A render straggler yields render_incomplete without blocking completed checks.
 export const RENDER_STRAGGLER = {
   subject: 'June campaign',
   date: 1782309720,
@@ -134,8 +106,7 @@ export const RENDER_EMPTY = {
   content_checking: {}
 } as const;
 
-// 13. A requested check reference is missing (items with neither id nor self)
-// -> lifecycle "unavailable" + data gap. accessibility not requested (null).
+// 13. A missing requested reference is unavailable; null accessibility was not requested.
 export const RENDER_CHECK_REFERENCE_MISSING = {
   subject: 'June campaign',
   date: 1782309720,
@@ -150,12 +121,7 @@ export const RENDER_CHECK_REFERENCE_MISSING = {
   }
 } as const;
 
-// 12. Check-lifecycle render variant. Lifecycle is now derived from the DETAIL
-// payload's meta.status, not this node; this fixture only supplies references.
-//   link_validation -> complete (resolves to LINK_RESULT)
-//   image_validation -> job_failed (errors[] present on the check node)
-//   accessibility    -> not_requested (null)
-//   code_analysis    -> processing (detail resolves to CODE_ANALYSIS_PROCESSING)
+// 12. Mixed lifecycle references; detail payload status decides completion.
 export const RENDER_CHECK_LIFECYCLE = {
   subject: 'June campaign',
   date: 1782309720,
@@ -172,15 +138,9 @@ export const RENDER_CHECK_LIFECYCLE = {
   }
 } as const;
 
-// ---------------------------------------------------------------------------
-// Structured-check detail results.
-// Each carries meta.status; casing is intentionally inconsistent across checks
-// to match the real API and exercise case-insensitive matching.
-// ---------------------------------------------------------------------------
+// Structured-check results intentionally vary meta.status casing.
 
-// 8. Link validation (GET /v1/inspect/links/{id}). meta.status "Completed".
-// Expected normalized counts: passes 2, failures 2 (critical 1, unknown 1),
-// informational 1.
+// 8. Links: 2 passes, 2 failures, and 1 informational result.
 export const LINK_RESULT = {
   meta: { status: 'Completed' },
   items: {
@@ -220,9 +180,7 @@ export const LINK_RESULT = {
   }
 } as const;
 
-// 9. Image validation (GET /v1/inspect/images/{id}). meta.status "Complete"
-// (different casing on purpose). Expected: passes 1, failures 1 (moderate 1),
-// informational 1.
+// 9. Images: 1 pass, 1 moderate failure, and 1 informational result.
 export const IMAGE_RESULT = {
   meta: { status: 'Complete' },
   items: {
@@ -259,10 +217,7 @@ export const IMAGE_RESULT = {
   }
 } as const;
 
-// 10. Accessibility (GET /v1/inspect/accessibility/{id}). meta.status "Completed".
-// Failures/needs_review are grouped by RULE, each with an instances[] array.
-// Expected (INSTANCE-level headline): failures 3 (serious 2, critical 1),
-// failure_rules 2; needs_review 1 (moderate 1), needs_review_rules 1.
+// 10. Accessibility: 3 failed instances across 2 rules; 1 review instance.
 export const ACCESSIBILITY_RESULT = {
   meta: { status: 'Completed', created_at: '2026-07-10T20:16:22.663Z', updated_at: '2026-07-10T20:16:24.956Z' },
   items: [
@@ -313,9 +268,7 @@ export const ACCESSIBILITY_RESULT = {
   ]
 } as const;
 
-// 11. Code analysis (GET /v1/inspect/analyze/{result_id}). meta carries the
-// authoritative count + support aggregates. Expected: count 2 (== features),
-// instances 3, by_feature { 'html-width': 2, 'target-attribute': 1 }.
+// 11. Code analysis: 2 canonical features and 3 instances.
 export const CODE_ANALYSIS_RESULT = {
   meta: {
     status: 'Completed',
@@ -371,15 +324,13 @@ export const CODE_ANALYSIS_RESULT = {
   }
 } as const;
 
-// 11b. Code analysis still processing (detail endpoint returns meta.status
-// "Processing" with no final counts) -> lifecycle "processing", counts 0.
+// 11b. Processing code analysis has no final counts.
 export const CODE_ANALYSIS_PROCESSING = {
   meta: { status: 'Processing', version: 1 },
   items: { id: 'code_pending', version: 1, features: [] }
 } as const;
 
-// Per-client render result (GET /v2/preview/tests/{test_id}/results/{client_id}).
-// Object keyed by client id. Detail tool escape hatch; not fetched by default.
+// Client render detail, not fetched by the composite workflow.
 export const CLIENT_RESULT = {
   gmail_chrome: {
     id: 'gmail_chrome',
@@ -406,23 +357,16 @@ export const CLIENTS_CATALOG = {
   }
 } as const;
 
-// ---------------------------------------------------------------------------
 // 18. API error bodies (Mailgun surfaces `message`; some endpoints use `Reason`).
-// ---------------------------------------------------------------------------
 
 export const API_ERROR_401 = { message: 'Invalid private key' } as const;
 export const API_ERROR_403 = { message: 'Email Preview is not enabled for this account' } as const;
 export const API_ERROR_429 = { message: 'Too many requests. Preview quota exceeded.' } as const;
 export const API_ERROR_5XX = { message: 'Internal server error' } as const;
 
-// ---------------------------------------------------------------------------
-// Behavioral markers (no upstream payload). Both repos reference these ids so
-// poll/timeout/ambiguity tests describe the same scenario.
-// ---------------------------------------------------------------------------
+// Behavioral markers shared with mailgun-cli.
 
-// 14. Unexpected structured-check 404: a referenced result endpoint returns 404.
-// Treat as unavailable + data gap; do NOT retry-on-404 unless Inspect confirms it
-// as a supported contract.
+// 14. A detail 404 becomes an unavailable data gap without retry.
 export const CHECK_RESULT_404 = {
   scenario: 'unexpected_structured_check_404',
   status_code: 404,
@@ -431,9 +375,7 @@ export const CHECK_RESULT_404 = {
   expected_data_gap_code: 'result_endpoint_unavailable'
 } as const;
 
-// 15. Poll deadline reached: a CHECK stays processing until the workflow deadline
-// (render stragglers do NOT cause a timeout). Return latest evidence with
-// timed_out=true; never create a second test.
+// 15. A processing check reaches the deadline and returns latest evidence without re-creation.
 export const POLL_DEADLINE_REACHED = {
   scenario: 'poll_deadline_reached',
   check_snapshot: 'CODE_ANALYSIS_PROCESSING',
@@ -441,10 +383,7 @@ export const POLL_DEADLINE_REACHED = {
   expected_data_gap_code: 'workflow_timed_out'
 } as const;
 
-// 17. Ambiguous create transport failure: the POST may have reached Mailgun
-// before the transport failed. Return an API/runtime error, say the test may
-// have been created, include reference_id when available, recommend
-// list_preview_tests for reconciliation, and do NOT POST again.
+// 17. Ambiguous creation requires reconciliation by reference id; never re-POST.
 export const AMBIGUOUS_CREATE_TRANSPORT_FAILURE = {
   scenario: 'ambiguous_create_transport_failure',
   reference_id: 'lovable-build-123',

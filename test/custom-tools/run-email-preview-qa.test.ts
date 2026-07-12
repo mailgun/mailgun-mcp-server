@@ -117,8 +117,7 @@ describe("validateRunInput", () => {
     });
 
     test("counts UTF-8 bytes, not characters, and rejects with zero requests", async () => {
-      // A multibyte char (é = 2 bytes) pushes the byte length over even though the
-      // character count is at the limit.
+      // A two-byte character exceeds the byte limit without exceeding the character limit.
       const html = "é".repeat(MAX_HTML_BYTES / 2 + 1);
       const { deps, posts, gets } = fakeDeps({
         createResponse: CREATE_ALL_CHECKS,
@@ -168,7 +167,7 @@ describe("validateRunInput", () => {
         createResponse: CREATE_ALL_CHECKS,
         status: RENDER_COMPLETE,
       });
-      // validateRunInput throws before runCreateAndPoll ever runs.
+      // Validation prevents the workflow from receiving deps.
       expect(() => validateRunInput({ ...baseInput, timeoutSeconds: -1 })).toThrow(
         RunEmailPreviewQaError,
       );
@@ -344,8 +343,7 @@ describe("runCreateAndPoll", () => {
   });
 
   test("timeout when a check never settles returns partial results, never a second create", async () => {
-    // Render is complete; the code-analysis check stays processing, so the
-    // workflow times out on the check (not the render) and never re-POSTs.
+    // Processing code analysis times out after rendering completes without another POST.
     const { deps, posts } = fakeDeps({
       createResponse: CREATE_ALL_CHECKS,
       status: RENDER_COMPLETE,
