@@ -3,11 +3,11 @@ import { z } from "zod";
 import { MailgunApiError } from "../api.js";
 import { META_TAGS_KEY, type Tag } from "../tags.js";
 import {
-  buildEmailPreviewQaOutput,
   buildPreviewCreateRequest,
+  collectEmailPreviewQa,
+  EmailPreviewQaPollError,
   extractCreatedTestId,
   normalizeWarnings,
-  pollEmailPreviewQa,
   CHECK_NAMES,
   type CheckName,
   type EmailPreviewQaOutput,
@@ -220,34 +220,31 @@ export async function runCreateAndPoll(
 
   const requestedChecks = new Set(input.contentChecks);
 
-  let poll;
   try {
-    poll = await pollEmailPreviewQa(
-      { testId, timeoutMs: input.timeoutSeconds * 1000, requestedChecks },
+    return await collectEmailPreviewQa(
+      {
+        testId,
+        timeoutMs: input.timeoutSeconds * 1000,
+        requestedChecks,
+        warnings,
+        requestedClients: input.clients,
+      },
       deps,
     );
   } catch (error) {
+    if (!(error instanceof EmailPreviewQaPollError)) throw error;
+    const cause = error.cause;
     // The test WAS created; reinvoking this tool would POST again. Not retryable:
     // resume the existing test with get_email_preview_qa instead.
     throw new RunEmailPreviewQaError(
       "POLL_FAILED_AFTER_CREATE",
       "The preview test was created, but retrieving its status failed.",
       false,
-      `Test '${testId}' was created. Resume with get_email_preview_qa (test_id '${testId}') rather than creating another test. Cause: ${error instanceof Error ? error.message : String(error)}`,
+      `Test '${testId}' was created. Resume with get_email_preview_qa (test_id '${testId}') rather than creating another test. Cause: ${cause instanceof Error ? cause.message : String(cause)}`,
       testId,
       input.referenceId,
     );
   }
-
-  return buildEmailPreviewQaOutput({
-    testId,
-    render: poll.render,
-    refs: poll.refs,
-    fetches: poll.fetches,
-    timedOut: poll.timedOut,
-    warnings,
-    requestedClients: input.clients,
-  });
 }
 
 export function register(server: McpServer, tags: readonly Tag[] = []): void {
@@ -268,7 +265,7 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
             "Optional explicit client ids (from list_preview_clients). Omit to use Mailgun defaults; an empty list is rejected.",
           ),
         content_checks: z
-          .array(z.enum(["link_validation", "image_validation", "accessibility", "code_analysis"]))
+          .array(z.enum(CHECK_NAMES))
           .optional()
           .describe(
             "Which structured checks to run. Defaults to all four; an empty list runs no checks.",

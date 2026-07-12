@@ -9,14 +9,14 @@ export type CheckLifecycle =
   | "job_failed"
   | "unavailable";
 
-export type CheckName = "link_validation" | "image_validation" | "accessibility" | "code_analysis";
-
-export const CHECK_NAMES: readonly CheckName[] = [
+export const CHECK_NAMES = [
   "link_validation",
   "image_validation",
   "accessibility",
   "code_analysis",
-];
+] as const;
+
+export type CheckName = (typeof CHECK_NAMES)[number];
 
 export interface DataGap {
   code: string;
@@ -131,14 +131,14 @@ function increment(map: Record<string, number>, key: string, by = 1): void {
 
 // --- Render state ---
 
-export interface RenderState {
+interface RenderState {
   status: RenderStatus;
   completed: string[];
   processing: string[];
   bounced: string[];
 }
 
-export function normalizeRenderState(render: unknown): RenderState {
+function normalizeRenderState(render: unknown): RenderState {
   const record = asRecord(render);
   const completed = stringArray(record.completed);
   const processing = stringArray(record.processing);
@@ -155,7 +155,7 @@ export function normalizeRenderState(render: unknown): RenderState {
 
 // --- Check references ---
 
-export interface CheckReference {
+interface CheckReference {
   requested: boolean;
   // A non-null check node was returned under content_checking (the reference
   // materialized), even if it exposed neither a result id nor errors. This tells
@@ -177,7 +177,7 @@ export interface CheckReference {
 // property can be distinguished from a not-requested one. The resume tool cannot
 // recover that selection from the status API; when it is omitted, an absent
 // property is treated as pending (never terminated after a single read).
-export function extractCheckResultIds(
+function extractCheckResultIds(
   render: unknown,
   requestedChecks?: ReadonlySet<CheckName>,
 ): Record<CheckName, CheckReference> {
@@ -203,31 +203,21 @@ export function extractCheckResultIds(
 }
 
 // Construct the known allowlisted path from a validated result id; never follow an upstream `self`.
-export function checkResultPath(name: CheckName, resultId: string): string {
-  const id = encodeURIComponent(resultId);
-  switch (name) {
-    case "link_validation":
-      return `/v1/inspect/links/${id}`;
-    case "image_validation":
-      return `/v1/inspect/images/${id}`;
-    case "accessibility":
-      return `/v1/inspect/accessibility/${id}`;
-    case "code_analysis":
-      return `/v1/inspect/analyze/${id}`;
-  }
+function checkResultPath(name: CheckName, resultId: string): string {
+  return `${CHECK_ADAPTERS[name].resultPath}/${encodeURIComponent(resultId)}`;
 }
 
 // --- Check fetch outcome ---
 
-export type CheckFetchStatus = "ok" | "not_found" | "not_fetched";
+type CheckFetchStatus = "ok" | "not_found" | "not_fetched";
 
-export interface CheckFetch {
+interface CheckFetch {
   status: CheckFetchStatus;
   payload?: unknown;
 }
 
 // Completion signal from the detail payload's meta.status (case-insensitive; missing = complete).
-export function detailStatus(payload: unknown): "complete" | "processing" {
+function detailStatus(payload: unknown): "complete" | "processing" {
   const raw = statusToken(asRecord(asRecord(payload).meta).status);
   if (
     raw.startsWith("process") ||
@@ -242,7 +232,7 @@ export function detailStatus(payload: unknown): "complete" | "processing" {
 
 // A requested check is terminal once its job errored, its detail is complete, or
 // its endpoint is unavailable. Independent of per-client rendering.
-export function isCheckTerminal(ref: CheckReference, fetch: CheckFetch): boolean {
+function isCheckTerminal(ref: CheckReference, fetch: CheckFetch): boolean {
   if (!ref.requested) return true;
   if (ref.hasErrors) return true;
   if (ref.resultId !== null) {
@@ -258,7 +248,7 @@ export function isCheckTerminal(ref: CheckReference, fetch: CheckFetch): boolean
 // Derived from the reference + detail fetch. An exposed-but-empty reference is
 // unavailable; an absent-but-requested one stays "processing" (it only reaches
 // output construction when the deadline was hit while still pending).
-export function normalizeCheckLifecycle(ref: CheckReference, fetch: CheckFetch): CheckLifecycle {
+function normalizeCheckLifecycle(ref: CheckReference, fetch: CheckFetch): CheckLifecycle {
   if (!ref.requested) return "not_requested";
   if (ref.hasErrors) return "job_failed";
   if (ref.resultId !== null) {
@@ -294,12 +284,12 @@ function countFindingBuckets(entries: unknown[]): LinkImageCounts {
   return counts;
 }
 
-export function countLinkValidationIssues(payload: unknown): LinkImageCounts {
+function countLinkValidationIssues(payload: unknown): LinkImageCounts {
   const results = asArray(asRecord(asRecord(payload).items).results);
   return countFindingBuckets(results);
 }
 
-export function countImageValidationIssues(payload: unknown): LinkImageCounts {
+function countImageValidationIssues(payload: unknown): LinkImageCounts {
   const images = asArray(asRecord(asRecord(payload).items).images);
   return countFindingBuckets(images);
 }
@@ -334,7 +324,7 @@ function countRuleGroups(entries: unknown[]): {
   return { instances, rules, bySeverity };
 }
 
-export function countAccessibilityIssues(payload: unknown): AccessibilityCounts {
+function countAccessibilityIssues(payload: unknown): AccessibilityCounts {
   const counts: AccessibilityCounts = {
     failures: 0,
     failure_rules: 0,
@@ -374,7 +364,7 @@ interface CodeAnalysisCounts {
 // verbatim. instances/by_feature are derived from items.features for drill-down.
 // A missing/malformed meta.count is reported as null (a data gap), not invented
 // from features.length.
-export function countCodeAnalysisIssues(payload: unknown): CodeAnalysisCounts {
+function countCodeAnalysisIssues(payload: unknown): CodeAnalysisCounts {
   const meta = asRecord(asRecord(payload).meta);
   const features = asArray(asRecord(asRecord(payload).items).features);
 
@@ -399,6 +389,98 @@ export function countCodeAnalysisIssues(payload: unknown): CodeAnalysisCounts {
     market_support: asRecord(meta.market_support),
   };
 }
+
+// --- Structured-check adapters ---
+
+type CheckOutputByName = EmailPreviewQaOutput["checks"];
+type CheckDetailsByName = {
+  [K in CheckName]: Omit<CheckOutputByName[K], "status" | "result_id">;
+};
+
+interface IssueContribution {
+  failures: number;
+  bySeverity: Record<string, number>;
+}
+
+interface CheckInterpretation<K extends CheckName> {
+  details: CheckDetailsByName[K];
+  dataGaps?: DataGap[];
+}
+
+interface CheckAdapter<K extends CheckName> {
+  resultPath: string;
+  empty: () => CheckDetailsByName[K];
+  interpret: (payload: unknown) => CheckInterpretation<K>;
+  issues: (details: CheckDetailsByName[K]) => IssueContribution | null;
+}
+
+const emptyLinkImage = (): CheckDetailsByName["link_validation"] => ({
+  passes: 0,
+  failures: 0,
+  informational: 0,
+  by_severity: {},
+});
+
+const CHECK_ADAPTERS: { [K in CheckName]: CheckAdapter<K> } = {
+  link_validation: {
+    resultPath: "/v1/inspect/links",
+    empty: emptyLinkImage,
+    interpret: (payload) => ({ details: countLinkValidationIssues(payload) }),
+    issues: (details) => ({ failures: details.failures, bySeverity: details.by_severity }),
+  },
+  image_validation: {
+    resultPath: "/v1/inspect/images",
+    empty: emptyLinkImage,
+    interpret: (payload) => ({ details: countImageValidationIssues(payload) }),
+    issues: (details) => ({ failures: details.failures, bySeverity: details.by_severity }),
+  },
+  accessibility: {
+    resultPath: "/v1/inspect/accessibility",
+    empty: () => ({
+      failures: 0,
+      failure_rules: 0,
+      needs_review: 0,
+      needs_review_rules: 0,
+      failures_by_severity: {},
+      needs_review_by_severity: {},
+    }),
+    interpret: (payload) => ({ details: countAccessibilityIssues(payload) }),
+    issues: (details) => ({
+      failures: details.failures,
+      bySeverity: details.failures_by_severity,
+    }),
+  },
+  code_analysis: {
+    resultPath: "/v1/inspect/analyze",
+    empty: () => ({
+      count: 0,
+      instances: 0,
+      by_feature: {},
+      application_support: {},
+      inbox_provider_support: {},
+      market_support: {},
+    }),
+    interpret: (payload) => {
+      const counts = countCodeAnalysisIssues(payload);
+      return {
+        details: { ...counts, count: counts.count ?? 0 },
+        dataGaps:
+          counts.count === null
+            ? [
+                {
+                  code: "code_analysis_count_unavailable",
+                  product: PRODUCT,
+                  message: "The code analysis result did not include a usable meta.count total.",
+                  impact:
+                    "The code-analysis feature count is unavailable; per-feature instance counts are still reported.",
+                },
+              ]
+            : undefined,
+      };
+    },
+    issues: () => null,
+  },
+};
 
 // --- Warnings ---
 
@@ -441,7 +523,7 @@ export function extractCreatedTestId(created: unknown): string | null {
 
 // --- Output builder ---
 
-export interface BuildOutputParams {
+interface BuildOutputParams {
   testId: string;
   render: unknown;
   refs: Record<CheckName, CheckReference>;
@@ -454,7 +536,66 @@ export interface BuildOutputParams {
   requestedClients?: readonly string[];
 }
 
-export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPreviewQaOutput {
+interface NormalizedCheck<K extends CheckName> {
+  output: CheckOutputByName[K];
+  issues: IssueContribution | null;
+  dataGaps: DataGap[];
+}
+
+type NormalizedChecks = { [K in CheckName]: NormalizedCheck<K> };
+
+function normalizeStructuredCheck<K extends CheckName>(
+  name: K,
+  ref: CheckReference,
+  fetch: CheckFetch,
+): NormalizedCheck<K> {
+  const lifecycle = normalizeCheckLifecycle(ref, fetch);
+  const adapter = CHECK_ADAPTERS[name] as CheckAdapter<K>;
+  const interpreted =
+    lifecycle === "complete"
+      ? adapter.interpret(fetch.payload)
+      : { details: adapter.empty(), dataGaps: undefined };
+  const dataGaps = [...(interpreted.dataGaps ?? [])];
+
+  if (lifecycle === "unavailable" && ref.requested) {
+    dataGaps.push(
+      ref.resultId === null
+        ? {
+            code: "check_reference_missing",
+            product: PRODUCT,
+            message: `The ${name} check did not expose a result reference.`,
+            impact: `Detailed ${name} results cannot be retrieved for this test.`,
+          }
+        : {
+            code: "result_endpoint_unavailable",
+            product: PRODUCT,
+            message: `The ${name} result endpoint was unavailable.`,
+            impact: `Detailed ${name} results could not be retrieved and are not counted.`,
+          },
+    );
+  }
+
+  return {
+    output: {
+      status: lifecycle,
+      result_id: ref.resultId,
+      ...interpreted.details,
+    } as CheckOutputByName[K],
+    issues: lifecycle === "complete" ? adapter.issues(interpreted.details) : null,
+    dataGaps,
+  };
+}
+
+function normalizeStructuredChecks(
+  refs: Record<CheckName, CheckReference>,
+  fetches: Record<CheckName, CheckFetch>,
+): NormalizedChecks {
+  return Object.fromEntries(
+    CHECK_NAMES.map((name) => [name, normalizeStructuredCheck(name, refs[name], fetches[name])]),
+  ) as NormalizedChecks;
+}
+
+function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPreviewQaOutput {
   const { testId, render, refs, fetches, timedOut } = params;
   const renderState = normalizeRenderState(render);
   const dataGaps: DataGap[] = [];
@@ -498,82 +639,8 @@ export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPrevi
     }
   }
 
-  const lifecycleFor = (name: CheckName): CheckLifecycle =>
-    normalizeCheckLifecycle(refs[name], fetches[name]);
-
-  const addRefGap = (name: CheckName, lifecycle: CheckLifecycle): void => {
-    if (lifecycle === "unavailable" && refs[name].requested) {
-      if (refs[name].resultId === null) {
-        dataGaps.push({
-          code: "check_reference_missing",
-          product: PRODUCT,
-          message: `The ${name} check did not expose a result reference.`,
-          impact: `Detailed ${name} results cannot be retrieved for this test.`,
-        });
-      } else {
-        dataGaps.push({
-          code: "result_endpoint_unavailable",
-          product: PRODUCT,
-          message: `The ${name} result endpoint was unavailable.`,
-          impact: `Detailed ${name} results could not be retrieved and are not counted.`,
-        });
-      }
-    }
-  };
-
-  const linkLifecycle = lifecycleFor("link_validation");
-  addRefGap("link_validation", linkLifecycle);
-  const linkCounts =
-    linkLifecycle === "complete"
-      ? countLinkValidationIssues(fetches.link_validation.payload)
-      : { passes: 0, failures: 0, informational: 0, by_severity: {} };
-
-  const imageLifecycle = lifecycleFor("image_validation");
-  addRefGap("image_validation", imageLifecycle);
-  const imageCounts =
-    imageLifecycle === "complete"
-      ? countImageValidationIssues(fetches.image_validation.payload)
-      : { passes: 0, failures: 0, informational: 0, by_severity: {} };
-
-  const a11yLifecycle = lifecycleFor("accessibility");
-  addRefGap("accessibility", a11yLifecycle);
-  const a11yCounts =
-    a11yLifecycle === "complete"
-      ? countAccessibilityIssues(fetches.accessibility.payload)
-      : {
-          failures: 0,
-          failure_rules: 0,
-          needs_review: 0,
-          needs_review_rules: 0,
-          failures_by_severity: {},
-          needs_review_by_severity: {},
-        };
-
-  const codeLifecycle = lifecycleFor("code_analysis");
-  addRefGap("code_analysis", codeLifecycle);
-  const codeCounts =
-    codeLifecycle === "complete"
-      ? countCodeAnalysisIssues(fetches.code_analysis.payload)
-      : {
-          count: 0,
-          instances: 0,
-          by_feature: {},
-          application_support: {},
-          inbox_provider_support: {},
-          market_support: {},
-        };
-
-  // meta.count is the canonical code-analysis total; a completed check that omits
-  // it is a data gap rather than a fabricated count.
-  if (codeLifecycle === "complete" && codeCounts.count === null) {
-    dataGaps.push({
-      code: "code_analysis_count_unavailable",
-      product: PRODUCT,
-      message: "The code analysis result did not include a usable meta.count total.",
-      impact:
-        "The code-analysis feature count is unavailable; per-feature instance counts are still reported.",
-    });
-  }
+  const normalizedChecks = normalizeStructuredChecks(refs, fetches);
+  dataGaps.push(...CHECK_NAMES.flatMap((name) => normalizedChecks[name].dataGaps));
 
   if (timedOut) {
     dataGaps.push({
@@ -590,19 +657,18 @@ export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPrevi
   const bySeverity: Record<string, number> = {};
   const byCheckAndSeverity: Record<string, Record<string, number>> = {};
 
-  const foldFailures = (name: string, failures: number, bySev: Record<string, number>): void => {
-    if (failures > 0) byCheck[name] = failures;
-    for (const [sev, count] of Object.entries(bySev)) {
+  let totalIssues = 0;
+  for (const name of CHECK_NAMES) {
+    const contribution = normalizedChecks[name].issues;
+    if (contribution === null) continue;
+    totalIssues += contribution.failures;
+    if (contribution.failures > 0) byCheck[name] = contribution.failures;
+    for (const [sev, count] of Object.entries(contribution.bySeverity)) {
       increment(bySeverity, sev, count);
       byCheckAndSeverity[name] = byCheckAndSeverity[name] ?? {};
       increment(byCheckAndSeverity[name], sev, count);
     }
-  };
-  foldFailures("link_validation", linkCounts.failures, linkCounts.by_severity);
-  foldFailures("image_validation", imageCounts.failures, imageCounts.by_severity);
-  foldFailures("accessibility", a11yCounts.failures, a11yCounts.failures_by_severity);
-
-  const totalIssues = linkCounts.failures + imageCounts.failures + a11yCounts.failures;
+  }
 
   return {
     test_id: testId,
@@ -621,42 +687,10 @@ export function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPrevi
       bounced: renderState.bounced,
     },
     checks: {
-      link_validation: {
-        status: linkLifecycle,
-        result_id: refs.link_validation.resultId,
-        passes: linkCounts.passes,
-        failures: linkCounts.failures,
-        informational: linkCounts.informational,
-        by_severity: linkCounts.by_severity,
-      },
-      image_validation: {
-        status: imageLifecycle,
-        result_id: refs.image_validation.resultId,
-        passes: imageCounts.passes,
-        failures: imageCounts.failures,
-        informational: imageCounts.informational,
-        by_severity: imageCounts.by_severity,
-      },
-      accessibility: {
-        status: a11yLifecycle,
-        result_id: refs.accessibility.resultId,
-        failures: a11yCounts.failures,
-        failure_rules: a11yCounts.failure_rules,
-        needs_review: a11yCounts.needs_review,
-        needs_review_rules: a11yCounts.needs_review_rules,
-        failures_by_severity: a11yCounts.failures_by_severity,
-        needs_review_by_severity: a11yCounts.needs_review_by_severity,
-      },
-      code_analysis: {
-        status: codeLifecycle,
-        result_id: refs.code_analysis.resultId,
-        count: codeCounts.count ?? 0,
-        instances: codeCounts.instances,
-        by_feature: codeCounts.by_feature,
-        application_support: codeCounts.application_support,
-        inbox_provider_support: codeCounts.inbox_provider_support,
-        market_support: codeCounts.market_support,
-      },
+      link_validation: normalizedChecks.link_validation.output,
+      image_validation: normalizedChecks.image_validation.output,
+      accessibility: normalizedChecks.accessibility.output,
+      code_analysis: normalizedChecks.code_analysis.output,
     },
     issue_counts: {
       total: totalIssues,
@@ -679,7 +713,7 @@ export interface PollDeps {
   sleep: (ms: number) => Promise<void>;
 }
 
-export interface PollParams {
+interface PollParams {
   testId: string;
   timeoutMs: number;
   // Validated create-time check selection, threaded so an absent content_checking
@@ -687,7 +721,7 @@ export interface PollParams {
   requestedChecks?: ReadonlySet<CheckName>;
 }
 
-export interface PollResult {
+interface PollResult {
   render: unknown;
   refs: Record<CheckName, CheckReference>;
   fetches: Record<CheckName, CheckFetch>;
@@ -736,7 +770,7 @@ async function fetchCheckResults(
 // Poll until every requested check is terminal or the deadline passes. Completion
 // is driven by checks, not per-client rendering (a slow client never blocks).
 // GETs only; creation happens outside this function.
-export async function pollEmailPreviewQa(params: PollParams, deps: PollDeps): Promise<PollResult> {
+async function pollEmailPreviewQa(params: PollParams, deps: PollDeps): Promise<PollResult> {
   // The V2 poll interval is a fixed five seconds; the injected clock/sleep keep
   // tests deterministic without exposing a configurable interval.
   const deadline = deps.now() + params.timeoutMs;
@@ -762,4 +796,42 @@ export async function pollEmailPreviewQa(params: PollParams, deps: PollDeps): Pr
   }
 
   return { render, refs, fetches, timedOut };
+}
+
+export interface CollectEmailPreviewQaParams extends PollParams {
+  warnings?: PreviewWarning[];
+  requestedClients?: readonly string[];
+}
+
+// Distinguishes I/O failures while collecting remote evidence from failures in
+// local normalization. Create callers need that distinction because the remote
+// test already exists when polling fails.
+export class EmailPreviewQaPollError extends Error {
+  constructor(public readonly cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "EmailPreviewQaPollError";
+  }
+}
+
+// Workflow-facing seam: callers provide provenance and receive the final summary;
+// polling references, detail fetches, and normalization remain internal concerns.
+export async function collectEmailPreviewQa(
+  params: CollectEmailPreviewQaParams,
+  deps: PollDeps,
+): Promise<EmailPreviewQaOutput> {
+  let poll: PollResult;
+  try {
+    poll = await pollEmailPreviewQa(params, deps);
+  } catch (error) {
+    throw new EmailPreviewQaPollError(error);
+  }
+  return buildEmailPreviewQaOutput({
+    testId: params.testId,
+    render: poll.render,
+    refs: poll.refs,
+    fetches: poll.fetches,
+    timedOut: poll.timedOut,
+    warnings: params.warnings,
+    requestedClients: params.requestedClients,
+  });
 }
