@@ -3,16 +3,13 @@ import { z } from "zod";
 import { makeMailgunRequest } from "../api.js";
 import type { PollDeps, RequestFn } from "./email-preview-qa.js";
 
-// Runtime concerns shared by the two Email Preview QA composites (create/poll and
-// resume): the MCP timeout contract, and the production I/O dependencies. Kept
-// feature-local and deliberately small, with no generalized DI or adapter framework.
+// Runtime policy shared by the create and resume Email Preview QA tools.
 
 export const DEFAULT_TIMEOUT_SECONDS = 120;
 export const MAX_TIMEOUT_SECONDS = 300;
 export const PER_REQUEST_TIMEOUT_MS = 30_000;
 
-// Shared MCP timeout contract: integer seconds, 0..300, default 120. Enforced at
-// the schema level so invalid values are rejected before any network access.
+// Schema validation rejects invalid timeouts before network access.
 export const timeoutSecondsSchema = z.number().int().min(0).max(MAX_TIMEOUT_SECONDS).optional();
 
 export class InvalidTimeoutError extends Error {
@@ -22,10 +19,7 @@ export class InvalidTimeoutError extends Error {
   }
 }
 
-// Core-level guard mirroring `timeoutSecondsSchema` for the exported workflow
-// functions (tests and internal callers use these directly). Applies the default,
-// rejects fractional/negative/oversized values, and never silently coerces, so a
-// rejected value makes zero requests.
+// Direct workflow callers receive the same validation and default as MCP callers.
 export function resolveTimeoutSeconds(value: number | undefined): number {
   if (value === undefined) return DEFAULT_TIMEOUT_SECONDS;
   if (
@@ -41,10 +35,7 @@ export function resolveTimeoutSeconds(value: number | undefined): number {
   return value;
 }
 
-// Production dependencies: a real Mailgun request adapter with an absolute
-// per-request abort timeout, a MONOTONIC clock (performance.now, immune to
-// wall-clock adjustments) for deadline math, and a real sleep. Tests inject their
-// own deterministic PollDeps instead.
+// Production polling uses per-request aborts and a monotonic clock; tests inject deterministic deps.
 export function createDefaultDeps(): PollDeps {
   const request: RequestFn = (method, path, body) =>
     makeMailgunRequest(

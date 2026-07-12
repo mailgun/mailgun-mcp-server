@@ -19,8 +19,7 @@ describe("MailgunApiError", () => {
   });
 });
 
-// A fake https.request so the request/response lifecycle can be driven from tests
-// without real sockets. destroy(err) mirrors Node: it surfaces on the 'error' event.
+// Fake request lifecycle; destroy(err) surfaces through the Node error event.
 class FakeClientRequest extends EventEmitter {
   destroyed = false;
   write(): void {}

@@ -151,8 +151,7 @@ export const endpoints: readonly EndpointEntry[] = [
     tags: ["optimize"],
   },
 
-  // Email Preview (Inspect)
-  // V1 aggregate results; kept for compatibility (V2 status is get_preview_test_status).
+  // Email Preview (Inspect); retain V1 aggregate results for compatibility.
   {
     endpoint: "GET /v1/preview/tests/{test_id}/results",
     toolName: "get_preview_result",

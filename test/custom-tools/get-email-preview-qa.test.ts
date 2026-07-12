@@ -15,8 +15,7 @@ import {
 
 type Route = unknown | (() => unknown);
 
-// Deterministic deps: `sleep` advances a virtual clock so poll loops terminate
-// without real timers, and `request` resolves fixtures (or throws) by path.
+// Sleep advances virtual time while requests resolve fixtures by path.
 function fakeDeps(routes: Record<string, Route>): { deps: PollDeps; requests: string[] } {
   let current = 0;
   const requests: string[] = [];
@@ -64,8 +63,7 @@ describe("runGetEmailPreviewQa", () => {
   test("polls while a CHECK is still processing, then settles to complete", async () => {
     let analyzeCalls = 0;
     const { deps, requests } = fakeDeps({
-      // Render is done immediately; the code-analysis CHECK lags, so polling is
-      // driven by the check, not the render.
+      // Code analysis keeps polling after rendering completes.
       [STATUS_PATH]: RENDER_COMPLETE,
       "/v1/inspect/links/link_001": LINK_RESULT,
       "/v1/inspect/images/image_001": IMAGE_RESULT,
@@ -122,8 +120,7 @@ describe("runGetEmailPreviewQa", () => {
   });
 
   test("unexpected 404 on a result endpoint marks the check unavailable", async () => {
-    // RENDER_CHECK_LIFECYCLE references code_pending (not in routes -> 404),
-    // link_001 resolves, image job failed, accessibility not requested.
+    // code_pending is deliberately absent and resolves as a soft 404.
     const { deps } = fakeDeps({
       [STATUS_PATH]: RENDER_CHECK_LIFECYCLE,
       "/v1/inspect/links/link_001": LINK_RESULT,
@@ -140,8 +137,7 @@ describe("runGetEmailPreviewQa", () => {
     expect(output.data_gaps.map((g) => g.code)).toContain("result_endpoint_unavailable");
   });
 
-  // P1: only a 404 on a detail endpoint is soft (unavailable + gap). Every other
-  // failure is a real tool error that must propagate, not be swallowed.
+  // Only detail 404s are soft; every other failure propagates.
   test.each([401, 403, 429, 500, 503])(
     "a %s on a result endpoint propagates as a tool error",
     async (statusCode) => {

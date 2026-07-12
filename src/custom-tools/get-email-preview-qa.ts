@@ -17,15 +17,7 @@ import {
   timeoutSecondsSchema,
 } from "./email-preview-qa-runtime.js";
 
-// The READ/RESUME composite: polls an existing test id, fetches the referenced
-// check results, and returns the same summary. Never creates a test.
-//
-// Limitation: the status API does not report which content checks or clients were
-// requested at create time. This tool therefore cannot flag a not-requested check
-// as "not_requested" from an absent property (it treats an absent content_checking
-// property as still-pending, never terminating after a single read), and it cannot
-// emit a requested_client_missing data gap. Explicit null checks are still reported
-// as not_requested. Use run_email_preview_qa when that provenance matters.
+// Resume lacks create-time check/client provenance, so absent checks stay pending.
 
 export interface GetEmailPreviewQaParams {
   testId: string;
@@ -41,8 +33,7 @@ export interface GetEmailPreviewQaError {
   };
 }
 
-// Core workflow with I/O injected. Exported for deterministic tests. Throws
-// InvalidTimeoutError (before any request) when timeout_seconds is out of contract.
+// Invalid timeouts fail before the injected workflow performs a request.
 export async function runGetEmailPreviewQa(
   params: GetEmailPreviewQaParams,
   deps: PollDeps,

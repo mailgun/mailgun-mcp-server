@@ -112,14 +112,12 @@ function str(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-// Lifecycle status matching is case-insensitive: lowercased + trimmed for
-// comparison only, never for display.
+// Normalize lifecycle status only for comparison, never for display.
 function statusToken(value: unknown): string {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
-// Native severity/impact bucket. Only whitespace is trimmed; the API's spelling
-// and casing are preserved. Blank/missing values bucket as "unknown".
+// Preserve upstream severity spelling and casing; bucket blank values as "unknown".
 function severityBucket(value: unknown): string {
   const s = typeof value === "string" ? value.trim() : "";
   return s.length > 0 ? s : "unknown";
@@ -157,26 +155,13 @@ function normalizeRenderState(render: unknown): RenderState {
 
 interface CheckReference {
   requested: boolean;
-  // A non-null check node was returned under content_checking (the reference
-  // materialized), even if it exposed neither a result id nor errors. This tells
-  // an exposed-but-empty node (terminal, unavailable) apart from an absent-but-
-  // requested one (still pending).
+  // Exposed distinguishes a terminal empty node from an absent check that is still pending.
   exposed: boolean;
   hasErrors: boolean;
   resultId: string | null;
 }
 
-// Classify each content_checking node:
-//   explicit null      -> not requested;
-//   absent property    -> pending if the check was requested at create time,
-//                         otherwise not requested;
-//   node with a result id -> referenced;
-//   node with errors[] -> job failed;
-//   node with neither  -> exposed but unavailable (a data gap).
-// `requestedChecks` carries the validated create-time selection so an absent
-// property can be distinguished from a not-requested one. The resume tool cannot
-// recover that selection from the status API; when it is omitted, an absent
-// property is treated as pending (never terminated after a single read).
+// Null means unrequested; absent checks without create-time selection remain pending.
 function extractCheckResultIds(
   render: unknown,
   requestedChecks?: ReadonlySet<CheckName>,
@@ -230,8 +215,7 @@ function detailStatus(payload: unknown): "complete" | "processing" {
   return "complete";
 }
 
-// A requested check is terminal once its job errored, its detail is complete, or
-// its endpoint is unavailable. Independent of per-client rendering.
+// Check completion depends on its job and detail endpoint, not client rendering.
 function isCheckTerminal(ref: CheckReference, fetch: CheckFetch): boolean {
   if (!ref.requested) return true;
   if (ref.hasErrors) return true;
@@ -240,14 +224,11 @@ function isCheckTerminal(ref: CheckReference, fetch: CheckFetch): boolean {
     if (fetch.status === "not_found") return true;
     return false; // not_fetched
   }
-  // No result id yet: an exposed-but-empty node is terminal (unavailable); an
-  // absent-but-requested reference is still pending.
+  // An exposed empty node is unavailable; an absent requested node is still pending.
   return ref.exposed;
 }
 
-// Derived from the reference + detail fetch. An exposed-but-empty reference is
-// unavailable; an absent-but-requested one stays "processing" (it only reaches
-// output construction when the deadline was hit while still pending).
+// Lifecycle combines reference state with the detail fetch outcome.
 function normalizeCheckLifecycle(ref: CheckReference, fetch: CheckFetch): CheckLifecycle {
   if (!ref.requested) return "not_requested";
   if (ref.hasErrors) return "job_failed";
@@ -303,8 +284,7 @@ interface AccessibilityCounts {
   needs_review_by_severity: Record<string, number>;
 }
 
-// Rules carry an instances[] array. Count instances as the headline and rules as a
-// secondary signal; a rule with no instances[] counts as one occurrence.
+// Headline counts use instances; a rule without instances counts once.
 function countRuleGroups(entries: unknown[]): {
   instances: number;
   rules: number;
@@ -360,10 +340,7 @@ interface CodeAnalysisCounts {
   market_support: Record<string, unknown>;
 }
 
-// meta.count is the canonical total (feature count); meta.*_support pass through
-// verbatim. instances/by_feature are derived from items.features for drill-down.
-// A missing/malformed meta.count is reported as null (a data gap), not invented
-// from features.length.
+// meta.count is canonical; missing values create a gap while support and feature detail pass through.
 function countCodeAnalysisIssues(payload: unknown): CodeAnalysisCounts {
   const meta = asRecord(asRecord(payload).meta);
   const features = asArray(asRecord(asRecord(payload).items).features);
@@ -502,8 +479,7 @@ export interface PreviewCreateInput {
   referenceId?: string;
 }
 
-// Body for POST /v2/preview/tests. HTML-only source; content_checking sends
-// explicit booleans for all four; clients/reference_id omitted when absent.
+// Send explicit check booleans; omit absent clients and reference_id.
 export function buildPreviewCreateRequest(input: PreviewCreateInput): Record<string, unknown> {
   const body: Record<string, unknown> = { subject: input.subject, html: input.html };
   if (input.clients && input.clients.length > 0) body.clients = [...input.clients];
@@ -530,9 +506,7 @@ interface BuildOutputParams {
   fetches: Record<CheckName, CheckFetch>;
   timedOut: boolean;
   warnings?: PreviewWarning[];
-  // Explicit clients requested at create time. When provided, a requested client
-  // absent from every render array becomes a data gap instead of disappearing.
-  // The resume tool cannot recover this from the status API, so it is omitted.
+  // Create-time clients reveal missing renders; resume cannot recover this provenance.
   requestedClients?: readonly string[];
 }
 
@@ -619,8 +593,7 @@ function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPreviewQaOut
     });
   }
 
-  // A requested client that never appears in any render array is a data gap, not
-  // a silent omission.
+  // Report requested clients missing from every render state.
   if (params.requestedClients) {
     const present = new Set([
       ...renderState.completed,
@@ -651,8 +624,7 @@ function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPreviewQaOut
     });
   }
 
-  // Cross-check aggregates fold link/image/accessibility failures only; code
-  // analysis is reported separately.
+  // Aggregate link, image, and accessibility failures; report code analysis separately.
   const byCheck: Record<string, number> = {};
   const bySeverity: Record<string, number> = {};
   const byCheckAndSeverity: Record<string, Record<string, number>> = {};
@@ -716,8 +688,7 @@ export interface PollDeps {
 interface PollParams {
   testId: string;
   timeoutMs: number;
-  // Validated create-time check selection, threaded so an absent content_checking
-  // property can be told apart from a not-requested one. Omitted by the resume tool.
+  // Create-time selection distinguishes absent pending checks from unrequested checks.
   requestedChecks?: ReadonlySet<CheckName>;
 }
 
@@ -735,8 +706,7 @@ function isNotFound(error: unknown): boolean {
   return status === 404;
 }
 
-// Fetch referenced check results concurrently (at most four). Unreferenced or
-// errored checks are left unfetched.
+// Fetch at most four referenced check results concurrently.
 async function fetchCheckResults(
   refs: Record<CheckName, CheckReference>,
   deps: PollDeps,
@@ -753,9 +723,7 @@ async function fetchCheckResults(
         const payload = await deps.request("GET", checkResultPath(name, ref.resultId));
         fetches[name] = { status: "ok", payload };
       } catch (error) {
-        // An unexpected 404 is incomplete-but-successful evidence (unavailable +
-        // data gap). Every other failure (401/403/429/5xx/network) is a real tool
-        // error: propagate it and never retry.
+        // A detail 404 becomes a data gap; all other failures propagate without retry.
         if (isNotFound(error)) {
           fetches[name] = { status: "not_found" };
         } else {
@@ -767,12 +735,9 @@ async function fetchCheckResults(
   return fetches;
 }
 
-// Poll until every requested check is terminal or the deadline passes. Completion
-// is driven by checks, not per-client rendering (a slow client never blocks).
-// GETs only; creation happens outside this function.
+// Poll requested checks to a terminal state or deadline; client rendering never blocks.
 async function pollEmailPreviewQa(params: PollParams, deps: PollDeps): Promise<PollResult> {
-  // The V2 poll interval is a fixed five seconds; the injected clock/sleep keep
-  // tests deterministic without exposing a configurable interval.
+  // Fixed five-second polling stays deterministic through injected time dependencies.
   const deadline = deps.now() + params.timeoutMs;
   const statusPath = `/v2/preview/tests/${encodeURIComponent(params.testId)}`;
 
@@ -803,9 +768,7 @@ export interface CollectEmailPreviewQaParams extends PollParams {
   requestedClients?: readonly string[];
 }
 
-// Distinguishes I/O failures while collecting remote evidence from failures in
-// local normalization. Create callers need that distinction because the remote
-// test already exists when polling fails.
+// Distinguish polling failures after creation from local normalization failures.
 export class EmailPreviewQaPollError extends Error {
   constructor(public readonly cause: unknown) {
     super(cause instanceof Error ? cause.message : String(cause));
@@ -813,8 +776,7 @@ export class EmailPreviewQaPollError extends Error {
   }
 }
 
-// Workflow-facing seam: callers provide provenance and receive the final summary;
-// polling references, detail fetches, and normalization remain internal concerns.
+// Callers provide provenance and receive a final summary; collection details stay internal.
 export async function collectEmailPreviewQa(
   params: CollectEmailPreviewQaParams,
   deps: PollDeps,
