@@ -26,6 +26,14 @@
   from 0 to 300 (default 120) and is validated before any request is made. The `html`
   input is capped at 10 MiB of UTF-8 bytes (an intentional client-side limit) and is
   rejected before any request.
+- **Inspect Email Preflight Agent Skill.** An optional, portable Agent Skill at
+  `skills/mailgun-inspect-preflight/` (shipped in the npm tarball, installed
+  manually) that routes natural-language email QA requests to the `inspect`
+  tools with a create/resume safety state machine, profile-based check and
+  client selection, evidence-scoped detail fetching, and a compact report
+  contract. The MCP tools behave identically without it. Repository tests
+  validate the skill structure, tool-name drift, mocked transcript scenarios,
+  and packaged tarball contents.
 
 ### Notes
 
