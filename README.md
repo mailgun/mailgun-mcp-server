@@ -249,6 +249,37 @@ The lower level `inspect` tools back the composites and can be called directly: 
 > [!NOTE]
 > Preview test creation is a mutating, quota-consuming action. A broader, MCP-wide review of mutation safety (confirmation prompts, write gating) is tracked as a separate follow-up and is intentionally not added as preview-only policy here.
 
+### Optional Agent Skill: Inspect Email Preflight
+
+The npm package ships an optional [Agent Skill](https://agentskills.io) at `skills/mailgun-inspect-preflight/` that turns natural-language email QA requests ("preflight this email before we send it") into safe, consistent Inspect workflows. It is an additive layer: the MCP tools behave identically without it, and all validation, polling, and create-safety behavior lives in the server.
+
+The skill requires this MCP server to be configured with the `inspect` tools enabled (the default, or `--tags` including `inspect`). Install it manually by copying the skill folder from the installed package (or a repo checkout) into your client's skills directory:
+
+```sh
+# Find the packaged skill (after installing @mailgun/mcp-server)
+SKILL_SRC="$(npm root -g)/@mailgun/mcp-server/skills/mailgun-inspect-preflight"
+```
+
+- **Claude Code**: copy to `.claude/skills/` in your project (or `~/.claude/skills/` for all projects), then start a new session.
+
+  ```sh
+  cp -R "$SKILL_SRC" .claude/skills/
+  ```
+
+- **Codex**: copy to `.agents/skills/` in your project (or `~/.agents/skills/` for all projects; older Codex versions use `~/.codex/skills/`), then restart Codex. The bundled `agents/openai.yaml` is optional presentation metadata; `SKILL.md` alone is sufficient.
+
+  ```sh
+  cp -R "$SKILL_SRC" .agents/skills/
+  ```
+
+- **Cursor**: copy to `.cursor/skills/` in your project (Cursor skills are project-scoped), then reload the window (`Cmd/Ctrl+Shift+P` → "Developer: Reload Window").
+
+  ```sh
+  cp -R "$SKILL_SRC" .cursor/skills/
+  ```
+
+After installation, verify discovery by asking the agent to "preflight an email" and confirming it announces the skill's profile and check selection before running `run_email_preview_qa`.
+
 ## Sample Prompts
 
 #### Send an Email
