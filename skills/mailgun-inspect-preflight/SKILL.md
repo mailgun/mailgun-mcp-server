@@ -1,6 +1,6 @@
 ---
 name: mailgun-inspect-preflight
-description: Preflight rendered email HTML with Mailgun Inspect Email Preview QA through the Mailgun MCP server. Use for operational email QA requests such as "preflight this email", "run all Inspect checks on this HTML", "resume preview test <id>", explaining link, image, accessibility, or code-analysis findings, choosing preview clients for an audience, drilling into one client's render, or suggesting fixes for reported findings. Do not use for sending email, Mailgun analytics, generic Mailgun API questions, developing the MCP server itself, or unrelated source editing.
+description: Preflight rendered email HTML with Mailgun Inspect Email Preview QA through the Mailgun MCP server. Use for operational email QA requests such as "preflight this email", "run all Inspect checks on this HTML", "resume preview test <id>", explaining link, image, accessibility, or code-analysis findings, choosing preview clients for an audience, drilling into one client's render, or handing confirmed findings to a host coding agent for explicitly requested workspace remediation. Do not use for sending email, Mailgun analytics, generic Mailgun API questions, developing the MCP server itself, or unrelated source editing.
 ---
 
 # Mailgun Inspect Email Preflight
@@ -15,8 +15,8 @@ Handle these operational Email Preview QA intents:
 2. Resume or refresh an existing test from a `test_id`.
 3. Explain summarized results and data gaps.
 4. Select checks and clients from the request or intended audience.
-5. Suggest concrete remediation for reported findings.
-6. Drill into a specific client render when the user asks for it.
+5. Suggest concrete remediation for reported findings, or hand an explicitly requested workspace edit to the host coding agent.
+6. Drill into and, when explicitly requested, visually review one specific client render.
 
 Do not trigger for MCP server development, generic Mailgun API questions, sending email, analytics or metrics, or unrelated source editing.
 
@@ -41,15 +41,16 @@ If a required tool is unavailable, stop and give setup guidance: the Mailgun MCP
 
 ## Intent routing
 
-| Request                               | Action                                                                                                        |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Run, test, or preflight this email    | Prepare inputs, then `run_email_preview_qa` once                                                              |
-| Resume, refresh, or check test `<id>` | `get_email_preview_qa` with that `test_id`                                                                    |
-| Explain results or data gaps          | Interpret the composite result; fetch check detail only per the evidence rules                                |
-| Which clients should we test?         | Discuss; use `list_preview_clients` only for named platforms or an approved narrower set; no create           |
-| What happened in client X?            | `get_preview_client_result` for that one client                                                               |
-| Fix these findings                    | Propose concrete changes; never edit files; a verification run needs fresh explicit intent                    |
-| Pasted structured result              | Interpret directly; call `get_email_preview_qa` only for a requested refresh or a `test_id` needing retrieval |
+| Request                               | Action                                                                                                                                          |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Run, test, or preflight this email    | Prepare inputs, then `run_email_preview_qa` once                                                                                                |
+| Resume, refresh, or check test `<id>` | `get_email_preview_qa` with that `test_id`                                                                                                      |
+| Explain results or data gaps          | Interpret the composite result; fetch check detail only per the evidence rules                                                                  |
+| Which clients should we test?         | Discuss; use `list_preview_clients` only for named platforms or an approved narrower set; no create                                             |
+| What happened in client X?            | `get_preview_client_result` for that one client                                                                                                 |
+| Visually inspect client X             | Retrieve that one client result; hand the selected screenshot to the host's image viewer; label observations separately                         |
+| Fix these findings                    | Fetch relevant detail; an explicitly authorized workspace edit may be handed to the host coding agent; verification needs fresh explicit intent |
+| Pasted structured result              | Interpret directly; call `get_email_preview_qa` only for a requested refresh or a `test_id` needing retrieval                                   |
 
 ## Create/resume state machine (safety-critical, overrides conversational convenience)
 
@@ -90,9 +91,11 @@ Normal preflight reporting uses the composite result only. Fetch a per-check det
 - the user asks for explanation or remediation, and
 - that check has findings or an evidence gap that needs clarification.
 
-Do not fetch details for clean or unrequested checks. Use `get_preview_client_result` only for a client the user explicitly asks about or for explicit render diagnostics; never fan out across all clients. Client drill-down may summarize status, metadata, errors, and available screenshot links, but do not visually interpret screenshots.
+Do not fetch details for clean or unrequested checks. Use `get_preview_client_result` only for a client the user explicitly asks about or for explicit render diagnostics; never fan out across all clients. By default, client drill-down summarizes status, metadata, errors, and available screenshot variants without visual interpretation.
 
-Remediation proposes concrete changes but never edits files. A post-fix verification test requires new explicit create intent.
+When the user explicitly asks for a visual review, retrieve exactly one requested client result and hand one available screenshot to the host's normal image-viewing capability. Do not reproduce the signed screenshot URL in the report or persist the image beyond the task unless requested. Put the conclusions under a **Model visual observations** label and keep them separate from **Inspect-reported findings**. A screenshot may support observations about clipping, overlap, missing visual content, and qualitative legibility; it cannot verify alt text, semantic roles, screen-reader behavior, or exact WCAG contrast ratios.
+
+Remediation normally proposes concrete changes. When the user explicitly asks to fix a rendered HTML file in the current workspace, the skill may hand that edit to the host coding agent under the host's normal file-editing authorization and review policy. This skill does not itself grant write permission, must not change remote templates, and must not invent a source-build mapping for generated HTML. Show a compact diff or change summary. A post-fix verification test requires new explicit create intent.
 
 Load `references/checks.md` when explaining check results, lifecycle states, counts, warnings, or `data_gaps`.
 
@@ -109,6 +112,8 @@ Return a compact response in the conversation by default; write a Markdown repor
 5. **Client renders**: lifecycle summary and relevant requested clients.
 6. **Data gaps and warnings**: incomplete evidence, unavailable details, upstream warnings.
 7. **Next action**: whether a read-only resume remains safe, or a fresh explicit create would be required.
+
+When both evidence channels are present, report **Inspect-reported findings** before **Model visual observations** so a visually clean render never masks structured accessibility findings.
 
 For clients: when defaults were used, say "Mailgun default client set" without enumerating included or excluded clients; when clients were explicit, list only the requested clients (or summarize the count if long); never emit the catalog of unselected clients.
 
