@@ -19,7 +19,8 @@ const REQUIRED_SCENARIO_IDS = [
   "missing-subject-asks",
   "named-clients-resolved",
   "single-client-drilldown",
-  "remediation-no-edit-no-rerun",
+  "explicit-visual-review-single-client",
+  "remediation-explicit-edit-handoff-no-rerun",
 ];
 
 describe("mailgun-inspect-preflight mocked scenarios", () => {
@@ -79,5 +80,21 @@ describe("mailgun-inspect-preflight mocked scenarios", () => {
       (s) => s.expected.createCalls === 1 && s.expected.contentChecks === undefined,
     ).map((s) => s.id);
     expect(missingChecks).toEqual([]);
+  });
+
+  test("explicit visual review stays single-client, labelled, and read-only", () => {
+    const scenario = SKILL_SCENARIOS.find((s) => s.id === "explicit-visual-review-single-client");
+    expect(scenario?.expected.createCalls).toBe(0);
+    expect(scenario?.expected.tools).toEqual(["get_preview_client_result"]);
+    expect(scenario?.expected.notes).toContain("model-observed");
+  });
+
+  test("remediation can hand off an authorized workspace edit without rerunning", () => {
+    const scenario = SKILL_SCENARIOS.find(
+      (s) => s.id === "remediation-explicit-edit-handoff-no-rerun",
+    );
+    expect(scenario?.expected.createCalls).toBe(0);
+    expect(scenario?.expected.notes).toContain("host coding agent");
+    expect(scenario?.expected.forbiddenTools).toContain("run_email_preview_qa");
   });
 });
