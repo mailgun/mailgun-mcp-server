@@ -87,6 +87,7 @@ describe("mailgun-inspect-preflight mocked scenarios", () => {
     expect(scenario?.expected.createCalls).toBe(0);
     expect(scenario?.expected.tools).toEqual(["get_preview_client_result"]);
     expect(scenario?.expected.notes).toContain("model-observed");
+    expect(scenario?.expected.notes).toContain("opaque API-provided asset names");
   });
 
   test("remediation can hand off an authorized workspace edit without rerunning", () => {
