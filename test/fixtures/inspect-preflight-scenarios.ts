@@ -183,7 +183,7 @@ export const SKILL_SCENARIOS: readonly SkillScenario[] = [
       tools: ["get_preview_client_result"],
       forbiddenTools: ["run_email_preview_qa", "get_email_preview_qa"],
       notes:
-        "Exactly one client result is retrieved. The signed URL is not reproduced in the report. Screenshot conclusions are labelled model-observed and kept separate from Inspect-reported findings; the review does not claim to verify alt text, semantic roles, screen-reader behavior, or exact contrast ratios.",
+        "Exactly one client result is retrieved. Screenshot keys are treated as opaque API-provided asset names, preferring default when present without inferring display orientation. The signed URL is not reproduced in the report. Screenshot conclusions are labelled model-observed and kept separate from Inspect-reported findings; the review does not claim to verify alt text, semantic roles, screen-reader behavior, or exact contrast ratios.",
     },
   },
   {
