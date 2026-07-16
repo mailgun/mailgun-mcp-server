@@ -26,8 +26,7 @@ import {
 
 const CREATE_PATH = "/v2/preview/tests";
 
-// Client-side UTF-8 limit, not a confirmed upstream Inspect maximum.
-export const MAX_HTML_BYTES = 10 * 1024 * 1024; // 10 MiB
+export const MAX_HTML_BYTES = 5 * 1024 * 1024;
 
 export interface RunEmailPreviewQaInput {
   subject: string;
@@ -90,7 +89,7 @@ export function validateRunInput(raw: RunEmailPreviewQaInput): ValidatedRunInput
       "HTML_TOO_LARGE",
       "The HTML content exceeds the maximum size for an email preview test.",
       false,
-      `The 'html' parameter is ${htmlBytes} UTF-8 bytes, over the ${MAX_HTML_BYTES}-byte (10 MiB) limit. This is an intentional client-side MCP input limit, not a confirmed upstream Inspect maximum.`,
+      `The 'html' parameter is ${htmlBytes} UTF-8 bytes, over the ${MAX_HTML_BYTES}-byte (5 MiB) Inspect limit.`,
     );
   }
 

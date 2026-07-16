@@ -65,7 +65,7 @@ If a required tool is unavailable, stop and give setup guidance: the Mailgun MCP
 
 ## Input rules
 
-**HTML.** Accept inline rendered HTML, a rendered `.html` file, or the output of an existing, clearly documented repository render command (MJML, React Email, or another template system). If no documented render path exists, ask for rendered HTML. Do not invent a build command and do not submit unrendered template source. HTML is the only supported source (no URL, MIME, ZIP, or template inputs) and is capped at 10 MiB UTF-8.
+**HTML.** Accept inline rendered HTML, a rendered `.html` file, or the output of an existing, clearly documented repository render command (MJML, React Email, or another template system). If no documented render path exists, ask for rendered HTML. Do not invent a build command and do not submit unrendered template source. HTML is the only supported source (no URL, MIME, ZIP, or template inputs) and is capped at 5 MiB.
 
 **Subject.** Use a subject the user supplied explicitly or that is clearly available in the request or campaign configuration. Do not infer it from `<title>`, a heading, or body content. Ask when absent.
 
