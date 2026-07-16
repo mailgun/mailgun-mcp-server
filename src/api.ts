@@ -17,6 +17,8 @@ export async function makeMailgunRequest(
   requestPath: string,
   data: Record<string, unknown> | null = null,
   contentType: string = "application/x-www-form-urlencoded",
+  // Absolute request timeout; omitted for existing callers and independent of polling deadlines.
+  timeoutMs?: number,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const cleanPath = requestPath.startsWith("/") ? requestPath.substring(1) : requestPath;
@@ -32,6 +34,15 @@ export async function makeMailgunRequest(
       },
     };
 
+    // A single timer bounds the whole request even while response data is arriving.
+    let absoluteTimer: NodeJS.Timeout | undefined;
+    const clearAbsoluteTimer = (): void => {
+      if (absoluteTimer !== undefined) {
+        clearTimeout(absoluteTimer);
+        absoluteTimer = undefined;
+      }
+    };
+
     const req = https.request(options, (res) => {
       let responseData = "";
 
@@ -40,6 +51,7 @@ export async function makeMailgunRequest(
       });
 
       res.on("end", () => {
+        clearAbsoluteTimer();
         try {
           const parsedData = JSON.parse(responseData);
           if (res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300) {
@@ -60,8 +72,16 @@ export async function makeMailgunRequest(
     });
 
     req.on("error", (error: Error) => {
+      clearAbsoluteTimer();
       reject(error);
     });
+
+    if (timeoutMs !== undefined && timeoutMs > 0) {
+      absoluteTimer = setTimeout(() => {
+        // Abort the whole request; the resulting 'error' rejects the promise.
+        req.destroy(new MailgunApiError(`Request timed out after ${timeoutMs}ms`, 0));
+      }, timeoutMs);
+    }
 
     if (data && method !== "GET") {
       if (contentType === "application/json") {
