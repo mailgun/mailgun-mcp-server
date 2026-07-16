@@ -19,8 +19,7 @@ const REQUIRED_SCENARIO_IDS = [
   "missing-subject-asks",
   "named-clients-resolved",
   "single-client-drilldown",
-  "explicit-visual-review-single-client",
-  "remediation-explicit-edit-handoff-no-rerun",
+  "remediation-no-edit-no-rerun",
 ];
 
 describe("mailgun-inspect-preflight mocked scenarios", () => {
@@ -82,20 +81,10 @@ describe("mailgun-inspect-preflight mocked scenarios", () => {
     expect(missingChecks).toEqual([]);
   });
 
-  test("explicit visual review stays single-client, labelled, and read-only", () => {
-    const scenario = SKILL_SCENARIOS.find((s) => s.id === "explicit-visual-review-single-client");
-    expect(scenario?.expected.createCalls).toBe(0);
-    expect(scenario?.expected.tools).toEqual(["get_preview_client_result"]);
-    expect(scenario?.expected.notes).toContain("model-observed");
-    expect(scenario?.expected.notes).toContain("opaque API-provided asset names");
-  });
-
-  test("remediation can hand off an authorized workspace edit without rerunning", () => {
-    const scenario = SKILL_SCENARIOS.find(
-      (s) => s.id === "remediation-explicit-edit-handoff-no-rerun",
-    );
-    expect(scenario?.expected.createCalls).toBe(0);
-    expect(scenario?.expected.notes).toContain("host coding agent");
-    expect(scenario?.expected.forbiddenTools).toContain("run_email_preview_qa");
+  test("single-client drill-down treats screenshot keys as opaque metadata", () => {
+    const scenario = SKILL_SCENARIOS.find((s) => s.id === "single-client-drilldown");
+    expect(scenario?.expected.notes).toContain("opaque API-provided screenshot asset keys");
+    expect(scenario?.expected.notes).toContain("never infers display orientation");
+    expect(scenario?.expected.notes).toContain("no visual interpretation");
   });
 });
