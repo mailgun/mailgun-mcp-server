@@ -228,7 +228,7 @@ The `inspect` product exposes an Email Preview QA workflow for checking how an H
 
 ### Inputs
 
-- **HTML only.** The V1 input source is the rendered `html` string plus a `subject`. URL, MIME, ZIP, and template sources are not supported. The `html` is capped at 10 MiB (measured as UTF-8 bytes) and rejected before any request. This is an intentional client-side input limit, not a confirmed upstream Inspect maximum.
+- **HTML only.** The V1 input source is the rendered `html` string plus a `subject`. URL, MIME, ZIP, and template sources are not supported. The `html` is capped at 5 MiB and rejected before any request.
 - **Content checks.** `content_checks` defaults to all four checks (`link_validation`, `image_validation`, `accessibility`, `code_analysis`). Pass a subset to run only those, or an empty list to run none.
 - **Clients.** Omitting `clients` uses Mailgun's server default client set. To select clients explicitly, pass ids from the V1 preview client catalog (`list_preview_clients`), which is authoritative for explicit client selection. Every client id must be a non-empty string; a blank or invalid id rejects the whole request.
 - **Timeout.** `timeout_seconds` is an integer from 0 to 300 (default 120). Values outside that range, and fractional values, are rejected before any network request is made.

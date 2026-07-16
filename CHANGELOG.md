@@ -24,8 +24,7 @@
   Omitting `clients` uses Mailgun's default client set, while explicit client ids
   come from the V1 catalog (`list_preview_clients`). `timeout_seconds` is an integer
   from 0 to 300 (default 120) and is validated before any request is made. The `html`
-  input is capped at 10 MiB of UTF-8 bytes (an intentional client-side limit) and is
-  rejected before any request.
+  input is capped at 5 MiB and is rejected before any request.
 - **Inspect Email Preflight Agent Skill.** An optional, portable Agent Skill at
   `skills/mailgun-inspect-preflight/` (shipped in the npm tarball, installed
   manually) that routes natural-language email QA requests to the `inspect`

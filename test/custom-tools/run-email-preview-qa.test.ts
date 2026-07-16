@@ -104,7 +104,7 @@ describe("validateRunInput", () => {
   });
 
   describe("HTML size limit", () => {
-    test("accepts HTML exactly at the 10 MiB limit", () => {
+    test("accepts HTML exactly at the 5 MiB limit", () => {
       // ASCII, so one byte per character: exactly MAX_HTML_BYTES bytes.
       const html = "a".repeat(MAX_HTML_BYTES);
       const v = validateRunInput({ subject: "s", html });
