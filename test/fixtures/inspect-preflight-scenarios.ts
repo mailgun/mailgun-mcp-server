@@ -168,30 +168,15 @@ export const SKILL_SCENARIOS: readonly SkillScenario[] = [
       tools: ["get_preview_client_result"],
       forbiddenTools: ["run_email_preview_qa", "get_email_preview_qa"],
       notes:
-        "Exactly one get_preview_client_result call for the Outlook client; no fan-out across other clients. The summary may include status, metadata, errors, and screenshot links but performs no visual interpretation of screenshots.",
+        "Exactly one get_preview_client_result call for the Outlook client; no fan-out across other clients. The summary may include status, metadata, errors, and opaque API-provided screenshot asset keys or links, but it never infers display orientation and performs no visual interpretation of screenshots.",
     },
   },
   {
-    id: "explicit-visual-review-single-client",
-    title: "An explicit visual request reviews one client without changing Inspect evidence",
+    id: "remediation-no-edit-no-rerun",
+    title: "Remediation proposes fixes without editing files or rerunning",
     setup:
-      "Paste a completed run_email_preview_qa JSON result whose clients.completed includes iphone16gmail_18.",
-    prompt:
-      "Download the Gmail on iPhone render and check it visually for clipping and legibility.",
-    expected: {
-      createCalls: 0,
-      tools: ["get_preview_client_result"],
-      forbiddenTools: ["run_email_preview_qa", "get_email_preview_qa"],
-      notes:
-        "Exactly one client result is retrieved. Screenshot keys are treated as opaque API-provided asset names, preferring default when present without inferring display orientation. The signed URL is not reproduced in the report. Screenshot conclusions are labelled model-observed and kept separate from Inspect-reported findings; the review does not claim to verify alt text, semantic roles, screen-reader behavior, or exact contrast ratios.",
-    },
-  },
-  {
-    id: "remediation-explicit-edit-handoff-no-rerun",
-    title: "Explicit remediation can hand off a workspace edit without rerunning",
-    setup:
-      "Paste a completed run_email_preview_qa JSON result with link_validation failures > 0 and a result_id, plus the path to the rendered HTML file in the current workspace; other checks clean.",
-    prompt: "Fix these confirmed findings in the workspace HTML file and show me the diff.",
+      "Paste a completed run_email_preview_qa JSON result with link_validation failures > 0 and a result_id; other checks clean.",
+    prompt: "Help me fix these Email Preview QA findings.",
     expected: {
       createCalls: 0,
       tools: ["get_link_validation_result"],
@@ -202,7 +187,7 @@ export const SKILL_SCENARIOS: readonly SkillScenario[] = [
         "get_code_analysis_result",
       ],
       notes:
-        "Detail is fetched only for the failing check. The skill may hand an explicitly authorized workspace edit to the host coding agent under its normal file-editing policy, then show a compact diff. The skill itself grants no write authority, remote templates are not changed, and a post-fix verification test needs a fresh explicit request.",
+        "Detail is fetched only for the failing check. The agent proposes concrete HTML changes but edits no files and states that a post-fix verification test needs a fresh explicit request.",
     },
   },
 ] as const;
