@@ -40,9 +40,6 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Build
-        run: npm run build
-
       - name: Verify release tag matches package version
         shell: bash
         env:
