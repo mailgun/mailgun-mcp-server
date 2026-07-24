@@ -1,6 +1,6 @@
 {
   "name": "@mailgun/mcp-server",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "An MCP server that gives AI agents a practical interface to Mailgun workflows for sending, diagnosing deliverability, and taking account actions safely.",
   "keywords": [
     "ai",
