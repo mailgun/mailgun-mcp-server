@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.2.0
 
 ### Added
 
@@ -41,6 +41,13 @@
   Mailgun-authored pass/fail verdict; quality gating is owned by the customer.
 - `run_email_preview_qa` is a mutating, quota-consuming action. A broader, MCP-wide
   review of mutation safety is tracked as a separate follow-up.
+
+## 2.1.2
+
+### Maintenance
+
+- Added the GitHub Actions workflow that publishes tagged releases to npm with
+  provenance. This version is already on npm and does not include Email Preview QA.
 
 ## 2.1.0
 
