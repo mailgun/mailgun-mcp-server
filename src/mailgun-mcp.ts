@@ -7,10 +7,11 @@ import { MAILGUN_API_KEY, OPENAPI_YAML } from "./config.js";
 import { loadOpenApiSpec } from "./openapi.js";
 import { generateToolsFromOpenApi } from "./tools.js";
 import { registerCustomTools } from "./custom-tools/index.js";
+import { PACKAGE_VERSION } from "./version.js";
 
 export const server = new McpServer({
   name: "mailgun",
-  version: "1.0.0",
+  version: PACKAGE_VERSION,
 });
 
 export async function main(): Promise<void> {
