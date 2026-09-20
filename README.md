@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/mailgun-mailgun-mcp-server-badge.png)](https://mseep.ai/app/mailgun-mailgun-mcp-server)
+
 # Mailgun MCP Server
 
 [![npm version](https://img.shields.io/npm/v/@mailgun/mcp-server.svg)](https://www.npmjs.com/package/@mailgun/mcp-server)
