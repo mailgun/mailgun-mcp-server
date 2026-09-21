@@ -23,6 +23,7 @@ export function openapiToZod(
 ): z.ZodTypeAny {
   if (!schema) return z.any();
   if (schema.$ref) return resolveSchemaRef(schema.$ref, fullSpec);
+  if (schema.allOf) return convertObjectSchema(mergeAllOf(schema, fullSpec), fullSpec);
 
   switch (schema.type) {
     case "string":
@@ -106,6 +107,24 @@ function buildObjectShape(schema: OpenApiSchema, fullSpec: OpenApiSpec): Record<
 function convertObjectSchema(schema: OpenApiSchema, fullSpec: OpenApiSpec): z.ZodType {
   if (!schema.properties) return z.record(z.string(), z.any());
   return z.object(buildObjectShape(schema, fullSpec)).describe(schema.description || "");
+}
+
+function mergeAllOf(schema: OpenApiSchema, fullSpec: OpenApiSpec): OpenApiSchema {
+  const merged: OpenApiSchema = {
+    type: "object",
+    properties: { ...schema.properties },
+    required: [...(schema.required ?? [])],
+    description: schema.description,
+  };
+
+  for (const member of schema.allOf ?? []) {
+    const resolved = member.$ref ? resolveReference(member.$ref, fullSpec) : member;
+    const flattened = resolved.allOf ? mergeAllOf(resolved, fullSpec) : resolved;
+    merged.properties = { ...merged.properties, ...flattened.properties };
+    merged.required = [...merged.required!, ...(flattened.required ?? [])];
+  }
+
+  return merged;
 }
 
 // Handles schemas that omit `type` but use `properties`, `oneOf`, or `anyOf`

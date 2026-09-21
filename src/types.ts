@@ -13,6 +13,7 @@ export interface OpenApiSchema {
   required?: string[];
   oneOf?: OpenApiSchema[];
   anyOf?: OpenApiSchema[];
+  allOf?: OpenApiSchema[];
 }
 
 export interface OpenApiParameter {

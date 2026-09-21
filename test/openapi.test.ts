@@ -158,6 +158,59 @@ describe("openapiToZod()", () => {
     expect(zodDef(result).typeName).toBe("ZodObject");
   });
 
+  test("converts allOf schema via $ref by merging referenced properties", () => {
+    const fullSpec: OpenApiSpec = {
+      components: {
+        schemas: {
+          FilterPredicateGroup: {
+            type: "object",
+            properties: {
+              AND: { type: "array", items: { type: "string" } },
+            },
+            required: ["AND"],
+          },
+        },
+      },
+    };
+    const result = openapiToZod(
+      {
+        type: "object",
+        allOf: [{ $ref: "#/components/schemas/FilterPredicateGroup" }],
+        description: "Filters to apply to the query.",
+      },
+      fullSpec,
+    );
+    expect(zodDef(result).typeName).toBe("ZodObject");
+    expect(zodDef(result).description).toBe("Filters to apply to the query.");
+    expect(result instanceof z.ZodObject && "AND" in result.shape).toBe(true);
+  });
+
+  test("converts allOf schema by merging inline and referenced properties", () => {
+    const fullSpec: OpenApiSpec = {
+      components: {
+        schemas: {
+          Base: {
+            type: "object",
+            properties: { id: { type: "string" } },
+            required: ["id"],
+          },
+        },
+      },
+    };
+    const result = openapiToZod(
+      {
+        type: "object",
+        properties: { name: { type: "string" } },
+        required: ["name"],
+        allOf: [{ $ref: "#/components/schemas/Base" }],
+      },
+      fullSpec,
+    );
+    expect(result instanceof z.ZodObject && "id" in result.shape && "name" in result.shape).toBe(
+      true,
+    );
+  });
+
   test("converts oneOf schema", () => {
     const result = openapiToZod(
       {
