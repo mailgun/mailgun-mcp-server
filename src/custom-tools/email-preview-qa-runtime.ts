@@ -1,12 +1,15 @@
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import { makeMailgunRequest } from "../api.js";
+import { WorkflowDeadlineError } from "./email-preview-qa.js";
 import type { PollDeps, RequestFn } from "./email-preview-qa.js";
 
 // Runtime policy shared by the create and resume Email Preview QA tools.
 
-export const DEFAULT_TIMEOUT_SECONDS = 120;
-export const MAX_TIMEOUT_SECONDS = 300;
+// MCP clients commonly abandon tool calls after 60s; the whole handler stays under 45s.
+export const MAX_TIMEOUT_SECONDS = 45;
+export const DEFAULT_TIMEOUT_SECONDS = MAX_TIMEOUT_SECONDS;
+export const HANDLER_DEADLINE_MS = MAX_TIMEOUT_SECONDS * 1000;
 export const PER_REQUEST_TIMEOUT_MS = 30_000;
 
 // Schema validation rejects invalid timeouts before network access.
@@ -36,18 +39,30 @@ export function resolveTimeoutSeconds(value: number | undefined): number {
 }
 
 // Production polling uses per-request aborts and a monotonic clock; tests inject deterministic deps.
+// Created once per tool call; requests are clamped to the handler deadline.
 export function createDefaultDeps(): PollDeps {
-  const request: RequestFn = (method, path, body) =>
-    makeMailgunRequest(
-      method,
-      path,
-      (body as Record<string, unknown> | undefined) ?? null,
-      "application/json",
-      PER_REQUEST_TIMEOUT_MS,
-    );
+  const now = (): number => performance.now();
+  const handlerDeadline = now() + HANDLER_DEADLINE_MS;
+  const request: RequestFn = async (method, path, body) => {
+    const remainingMs = Math.floor(handlerDeadline - now());
+    if (remainingMs <= 0) throw new WorkflowDeadlineError();
+    try {
+      return await makeMailgunRequest(
+        method,
+        path,
+        (body as Record<string, unknown> | undefined) ?? null,
+        "application/json",
+        Math.min(PER_REQUEST_TIMEOUT_MS, remainingMs),
+      );
+    } catch (error) {
+      // Lets polling return partial results instead of failing.
+      if (now() >= handlerDeadline) throw new WorkflowDeadlineError(error);
+      throw error;
+    }
+  };
   return {
     request,
-    now: () => performance.now(),
+    now,
     sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
   };
 }

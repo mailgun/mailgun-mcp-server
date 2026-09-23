@@ -162,6 +162,8 @@ export async function runCreateAndPoll(
   deps: PollDeps,
 ): Promise<EmailPreviewQaOutput> {
   const body = buildPreviewCreateRequest(input);
+  // The timeout includes the create request.
+  const pollDeadline = deps.now() + input.timeoutSeconds * 1000;
 
   let created: unknown;
   try {
@@ -213,7 +215,7 @@ export async function runCreateAndPoll(
     return await collectEmailPreviewQa(
       {
         testId,
-        timeoutMs: input.timeoutSeconds * 1000,
+        timeoutMs: Math.max(0, pollDeadline - deps.now()),
         requestedChecks,
         warnings,
         requestedClients: input.clients,

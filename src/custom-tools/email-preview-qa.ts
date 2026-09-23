@@ -679,6 +679,14 @@ function buildEmailPreviewQaOutput(params: BuildOutputParams): EmailPreviewQaOut
 
 export type RequestFn = (method: string, path: string, body?: unknown) => Promise<unknown>;
 
+// A request was aborted at the tool-call deadline.
+export class WorkflowDeadlineError extends Error {
+  constructor(public readonly cause?: unknown) {
+    super("The tool-call deadline was reached before the request completed.");
+    this.name = "WorkflowDeadlineError";
+  }
+}
+
 export interface PollDeps {
   request: RequestFn;
   now: () => number;
@@ -755,9 +763,18 @@ async function pollEmailPreviewQa(params: PollParams, deps: PollDeps): Promise<P
       break;
     }
     await deps.sleep(POLL_INTERVAL_MS);
-    render = await deps.request("GET", statusPath);
-    refs = extractCheckResultIds(render, params.requestedChecks);
-    fetches = await fetchCheckResults(refs, deps);
+    try {
+      // Commit only complete snapshots so a deadline abort keeps the previous one.
+      const nextRender = await deps.request("GET", statusPath);
+      const nextRefs = extractCheckResultIds(nextRender, params.requestedChecks);
+      fetches = await fetchCheckResults(nextRefs, deps);
+      render = nextRender;
+      refs = nextRefs;
+    } catch (error) {
+      if (!(error instanceof WorkflowDeadlineError)) throw error;
+      timedOut = true;
+      break;
+    }
   }
 
   return { render, refs, fetches, timedOut };

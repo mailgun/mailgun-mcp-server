@@ -74,7 +74,7 @@ describe("runGetEmailPreviewQa", () => {
       },
     });
     const output = await runGetEmailPreviewQa(
-      { testId: "preview_test_001", timeoutSeconds: 60 },
+      { testId: "preview_test_001", timeoutSeconds: 45 },
       deps,
     );
 
@@ -174,8 +174,8 @@ describe("runGetEmailPreviewQa", () => {
 
   describe("timeout contract", () => {
     const routes = { [STATUS_PATH]: RENDER_COMPLETE, ...RESULT_ROUTES };
-    test("defaults to 120 and accepts 0 and 300", async () => {
-      for (const timeoutSeconds of [undefined, 0, 300]) {
+    test("defaults to 45 and accepts 0 and 45", async () => {
+      for (const timeoutSeconds of [undefined, 0, 45]) {
         const { deps } = fakeDeps(routes);
         const output = await runGetEmailPreviewQa(
           { testId: "preview_test_001", timeoutSeconds },
@@ -184,7 +184,7 @@ describe("runGetEmailPreviewQa", () => {
         expect(output.status).toBe("complete");
       }
     });
-    test.each([-1, 301, 600, 1.5])(
+    test.each([-1, 46, 120, 300, 1.5])(
       "rejects invalid value %s before any request",
       async (timeoutSeconds) => {
         const { deps, requests } = fakeDeps(routes);

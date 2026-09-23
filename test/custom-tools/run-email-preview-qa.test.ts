@@ -31,6 +31,7 @@ const RESULT_ROUTES: Record<string, unknown> = {
 
 interface FakeOpts {
   createResponse?: unknown;
+  createLatencyMs?: number;
   createError?: unknown;
   status?: unknown | (() => unknown);
   resultRoutes?: Record<string, unknown>;
@@ -48,6 +49,7 @@ function fakeDeps(opts: FakeOpts): {
     request: async (method, path, body) => {
       if (method === "POST") {
         posts.push({ path, body });
+        current += opts.createLatencyMs ?? 0;
         if (opts.createError !== undefined) throw opts.createError;
         return opts.createResponse;
       }
@@ -146,18 +148,18 @@ describe("validateRunInput", () => {
   });
 
   describe("timeout contract", () => {
-    test("defaults to 120", () => {
-      expect(validateRunInput({ subject: "s", html: "<p>x</p>" }).timeoutSeconds).toBe(120);
+    test("defaults to 45", () => {
+      expect(validateRunInput({ subject: "s", html: "<p>x</p>" }).timeoutSeconds).toBe(45);
     });
-    test("accepts 0 and 300", () => {
+    test("accepts 0 and 45", () => {
       expect(
         validateRunInput({ subject: "s", html: "<p>x</p>", timeoutSeconds: 0 }).timeoutSeconds,
       ).toBe(0);
       expect(
-        validateRunInput({ subject: "s", html: "<p>x</p>", timeoutSeconds: 300 }).timeoutSeconds,
-      ).toBe(300);
+        validateRunInput({ subject: "s", html: "<p>x</p>", timeoutSeconds: 45 }).timeoutSeconds,
+      ).toBe(45);
     });
-    test.each([-1, 301, 9000, 1.5])("rejects invalid value %s", (value) => {
+    test.each([-1, 46, 120, 300, 1.5])("rejects invalid value %s", (value) => {
       expect(() =>
         validateRunInput({ subject: "s", html: "<p>x</p>", timeoutSeconds: value }),
       ).toThrow(RunEmailPreviewQaError);
@@ -363,5 +365,23 @@ describe("runCreateAndPoll", () => {
     expect(output.checks.link_validation.status).toBe("complete");
     expect(posts).toHaveLength(1);
     expect(output.data_gaps.map((g) => g.code)).toContain("workflow_timed_out");
+  });
+
+  test("time spent creating counts against the timeout", async () => {
+    const { deps, gets } = fakeDeps({
+      createResponse: CREATE_ALL_CHECKS,
+      createLatencyMs: 8_000,
+      status: RENDER_COMPLETE,
+      resultRoutes: {
+        ...RESULT_ROUTES,
+        "/v1/inspect/analyze/code_001": CODE_ANALYSIS_PROCESSING,
+      },
+    });
+    const output = await runCreateAndPoll(
+      validateRunInput({ ...baseInput, timeoutSeconds: 10 }),
+      deps,
+    );
+    expect(output.timed_out).toBe(true);
+    expect(gets.filter((g) => g === STATUS_PATH)).toHaveLength(1);
   });
 });

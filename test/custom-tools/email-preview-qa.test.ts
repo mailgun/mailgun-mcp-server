@@ -3,6 +3,7 @@ import { MailgunApiError } from "../../src/api.js";
 import {
   CHECK_NAMES,
   collectEmailPreviewQa,
+  WorkflowDeadlineError,
   type CheckName,
   type PollDeps,
 } from "../../src/custom-tools/email-preview-qa.js";
@@ -227,6 +228,30 @@ describe("collectEmailPreviewQa", () => {
 
     expect(output.timed_out).toBe(true);
     expect(output.checks.code_analysis).toMatchObject({ status: "processing", count: 0 });
+    expect(output.data_gaps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "workflow_timed_out" })]),
+    );
+  });
+
+  test("a request aborted at the tool-call deadline keeps the last complete snapshot", async () => {
+    let codeCalls = 0;
+    const { deps } = fakeDeps({
+      [STATUS_PATH]: RENDER_COMPLETE,
+      ...RESULT_ROUTES,
+      "/v1/inspect/analyze/code_001": () => {
+        codeCalls += 1;
+        if (codeCalls === 1) return CODE_ANALYSIS_PROCESSING;
+        throw new WorkflowDeadlineError();
+      },
+    });
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 30_000 },
+      deps,
+    );
+
+    expect(output.timed_out).toBe(true);
+    expect(output.checks.code_analysis.status).toBe("processing");
+    expect(output.checks.link_validation.status).toBe("complete");
     expect(output.data_gaps).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "workflow_timed_out" })]),
     );
