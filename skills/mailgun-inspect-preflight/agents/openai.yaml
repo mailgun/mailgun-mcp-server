@@ -1,0 +1,6 @@
+# Optional Codex presentation metadata. This file is not required for correct
+# behavior; Claude Code, Cursor, and other Agent Skills clients ignore it and
+# rely solely on SKILL.md.
+interface:
+  display_name: "Mailgun Inspect Email Preflight"
+  short_description: "Preflight rendered email HTML with Mailgun Inspect Email Preview QA: run checks, resume tests, explain findings, and suggest fixes."
