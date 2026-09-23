@@ -103,10 +103,10 @@ export const SKILL_SCENARIOS: readonly SkillScenario[] = [
     },
   },
   {
-    id: "timeout-single-auto-resume",
-    title: "A timed-out create gets exactly one automatic resume and never a second create",
+    id: "timeout-bounded-auto-resume",
+    title: "A timed-out create gets at most 3 automatic resumes and never a second create",
     setup:
-      "Mock run_email_preview_qa to return a summary with timed_out: true, then mock get_email_preview_qa to return a still-processing summary for the same test_id.",
+      "Mock run_email_preview_qa to return a summary with timed_out: true, then mock get_email_preview_qa to return a still-processing summary for the same test_id every time.",
     prompt: `Preflight this email. Subject: "July launch". HTML: ${SAMPLE_HTML}`,
     expected: {
       createCalls: 1,
@@ -114,7 +114,7 @@ export const SKILL_SCENARIOS: readonly SkillScenario[] = [
       contentChecks: ALL_CHECKS,
       clientsOmitted: true,
       notes:
-        "After timed_out: true the agent resumes exactly once with the returned test_id and the default timeout. When the resume is still incomplete it stops, reports the evidence, and says a later read-only resume remains safe. No second create.",
+        "After timed_out: true the agent resumes with the returned test_id and the default timeout, at most 3 times. When the third resume is still incomplete it stops, reports the evidence, and says a later read-only resume remains safe. No second create.",
     },
   },
   {

@@ -14,7 +14,7 @@ const REQUIRED_SCENARIO_IDS = [
   "explain-pasted-result",
   "client-planning-no-create",
   "resume-by-test-id",
-  "timeout-single-auto-resume",
+  "timeout-bounded-auto-resume",
   "ambiguous-create-stops",
   "missing-subject-asks",
   "named-clients-resolved",

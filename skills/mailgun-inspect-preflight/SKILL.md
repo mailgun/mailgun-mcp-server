@@ -25,7 +25,7 @@ Do not trigger for MCP server development, generic Mailgun API questions, sendin
 Always required (both from the Mailgun MCP server with the `inspect` tag enabled):
 
 - `run_email_preview_qa`: one explicitly authorized new preflight. Creates a remote test and consumes preview quota; it does not send email.
-- `get_email_preview_qa`: an existing test, a refresh, or the one allowed automatic resume.
+- `get_email_preview_qa`: an existing test, a refresh, or an allowed automatic resume.
 
 Conditional, called only for the stated reason:
 
@@ -57,8 +57,8 @@ If a required tool is unavailable, stop and give setup guidance: the Mailgun MCP
 2. Explaining, planning, selecting clients, resuming, or inspecting pasted results does not authorize a create.
 3. A later verification run requires fresh explicit intent. Do not add a redundant confirmation after the user has already authorized the run.
 4. If create returns an accepted result with a `test_id`, treat creation as complete and follow the returned polling/result state.
-5. If the result times out (`timed_out: true`), or polling fails after creation and a `test_id` is available (error code `POLL_FAILED_AFTER_CREATE`), automatically call `get_email_preview_qa` exactly once with that `test_id`.
-6. If that one resume is still incomplete or fails, stop and report the current evidence and whether a later read-only resume remains safe.
+5. If the result times out (`timed_out: true`), or polling fails after creation and a `test_id` is available (error code `POLL_FAILED_AFTER_CREATE`), automatically call `get_email_preview_qa` with that `test_id`, up to 3 times in total while each result is still `timed_out: true`.
+6. If a resume fails, or the third resume is still incomplete, stop and report the current evidence and whether a later read-only resume remains safe.
 7. If the create transport fails before a definitive response and no `test_id` is available (error codes `AMBIGUOUS_CREATE`, `CREATE_NO_TEST_ID`), report that the outcome is uncertain and stop. Never automatically recreate.
 8. `list_preview_tests` may be offered as manual troubleshooting after an uncertain create, but never claim it can reconcile by `reference_id` and never call it automatically.
 9. Interpret a pasted structured result directly. Call `get_email_preview_qa` only when the user requests a refresh or supplies a `test_id` that needs retrieval.
@@ -71,7 +71,7 @@ If a required tool is unavailable, stop and give setup guidance: the Mailgun MCP
 
 **Reference ID.** Always supply a readable, unique `reference_id`: preserve a user-supplied identifier, otherwise combine a campaign or template slug with a UTC timestamp (for example `summer-launch-20260712T183000Z`). It is only a correlation aid: not an idempotency key, not a guaranteed lookup field, and not proof that a create succeeded.
 
-**Timeout.** Omit `timeout_seconds` and use the MCP default unless the user requests a value. The one automatic resume also uses the MCP default unless the user supplied a preference.
+**Timeout.** Omit `timeout_seconds` and use the MCP default unless the user requests a value. Automatic resumes also use the MCP default unless the user supplied a preference.
 
 ## Checks and clients
 

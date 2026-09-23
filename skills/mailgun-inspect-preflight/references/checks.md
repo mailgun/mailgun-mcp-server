@@ -32,7 +32,7 @@ Client-render completion and structured-check completion are independent:
 - The top-level `status` describes client rendering only: `complete`, `processing`, `partial` (some clients bounced), or `unknown` (no render state yet).
 - `summary` and `clients` bucket client ids into `completed`, `processing`, and `bounced`.
 - Slow or stuck client renders never block content checks. A `render_incomplete` data gap with checks `complete` means the findings are final but some screenshots are still processing; a read-only resume with the same `test_id` can collect the remaining renders.
-- `timed_out: true` means the workflow deadline passed while something was still settling; resume once with the same `test_id` per the state machine.
+- `timed_out: true` means the workflow deadline passed while something was still settling; resume with the same `test_id` per the state machine.
 
 ## Count semantics
 
@@ -60,7 +60,7 @@ Every `data_gaps` entry has a `code`, `message`, and `impact`. Report gaps in th
 | `check_reference_missing`         | A requested check exposed no result reference    | Detail results unretrievable for this test |
 | `result_endpoint_unavailable`     | A check's detail endpoint was unavailable        | Detail results not counted; report the gap |
 | `code_analysis_count_unavailable` | Upstream omitted the code-analysis feature total | Per-feature instance counts still reported |
-| `workflow_timed_out`              | Deadline reached while work was processing       | One automatic resume per the state machine |
+| `workflow_timed_out`              | Deadline reached while work was processing       | Automatic resumes per the state machine    |
 
 ## Composite error codes
 
@@ -70,6 +70,6 @@ Composite tools return structured errors as `{ error: { code, message, retryable
 - `NOT_ENTITLED`: Email Preview is not enabled for the account, or access was forbidden.
 - `CREATE_REJECTED`: Mailgun definitively rejected the create. Never re-POST automatically.
 - `AMBIGUOUS_CREATE`, `CREATE_NO_TEST_ID`: the create outcome is uncertain and no `test_id` is available. Report uncertainty and stop; `list_preview_tests` is manual troubleshooting only.
-- `POLL_FAILED_AFTER_CREATE`: the test exists; the error includes its `test_id`. One automatic `get_email_preview_qa` resume is allowed.
+- `POLL_FAILED_AFTER_CREATE`: the test exists; the error includes its `test_id`. Automatic `get_email_preview_qa` resumes are allowed per the state machine.
 - `TEST_NOT_FOUND`: the supplied `test_id` matched no test.
 - `UPSTREAM_API_ERROR`: transient upstream failure; `retryable` refers to the user re-invoking the tool, never an automatic re-create.
