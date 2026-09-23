@@ -1,5 +1,6 @@
 import https from "node:https";
 import { MAILGUN_API_KEY, MAILGUN_API_HOSTNAME } from "./config.js";
+import { USER_AGENT } from "./version.js";
 
 export class MailgunApiError extends Error {
   constructor(
@@ -31,6 +32,7 @@ export async function makeMailgunRequest(
       headers: {
         Authorization: `Basic ${auth}`,
         "Content-Type": contentType,
+        "User-Agent": USER_AGENT,
       },
     };
 

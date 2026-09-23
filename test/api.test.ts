@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { EventEmitter } from "node:events";
+import type { RequestOptions } from "node:https";
 import { MailgunApiError, makeMailgunRequest } from "../src/api.js";
+import { USER_AGENT } from "../src/version.js";
 
 describe("MailgunApiError", () => {
   test("carries statusCode and apiMessage", () => {
@@ -32,11 +34,13 @@ class FakeClientRequest extends EventEmitter {
 
 const hoisted = vi.hoisted(() => ({
   pending: null as { req: FakeClientRequest; cb: (res: EventEmitter) => void } | null,
+  lastOptions: null as RequestOptions | null,
 }));
 
 vi.mock("node:https", () => ({
   default: {
-    request: (_options: unknown, cb: (res: EventEmitter) => void) => {
+    request: (options: RequestOptions, cb: (res: EventEmitter) => void) => {
+      hoisted.lastOptions = options;
       const req = new FakeClientRequest();
       hoisted.pending = { req, cb };
       return req;
@@ -102,5 +106,18 @@ describe("makeMailgunRequest per-request timeout", () => {
     await expect(promise).resolves.toEqual({ ok: true });
     await vi.advanceTimersByTimeAsync(600_000);
     expect(hoisted.pending?.req.destroyed).toBe(false);
+  });
+});
+
+describe("makeMailgunRequest user agent", () => {
+  afterEach(() => {
+    hoisted.lastOptions = null;
+  });
+
+  test("sends the Mailgun MCP user agent on every request", async () => {
+    const promise = makeMailgunRequest("GET", "/v3/domains");
+    respond(200, { ok: true });
+    await expect(promise).resolves.toEqual({ ok: true });
+    expect(hoisted.lastOptions?.headers?.["User-Agent"]).toBe(USER_AGENT);
   });
 });
