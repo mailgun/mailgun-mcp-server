@@ -20,6 +20,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Ma
 - **Mailing Lists** — Create, view, and update mailing lists and their members
 - **Templates** — Create, view, and update email templates with versioning
 - **Analytics** — Query sending metrics, usage metrics, and logs
+- **Message Investigation** — `investigate_message_delivery` answers "why didn't this email arrive?" for one recipient or message: searches logs across the account and all subaccounts, builds a per-message event timeline, classifies the outcome, and checks the recipient against the sending domain's suppression lists
 - **Stats** — View aggregate statistics by domain, tag, provider, device, and country
 - **Suppressions** — View bounces, unsubscribes, complaints, and allowlist entries
 - **IPs & IP Pools** — View IP assignments and dedicated IP pool configuration
@@ -249,6 +250,26 @@ Include a personalized greeting and a call-to-action button.
 Can you check the bounce classification stats for my account and tell me
 what the most common bounce reasons are?
 ```
+
+#### Find Out Why an Email Didn't Arrive
+
+```
+A customer says the receipt we sent to EMAIL_HERE yesterday never showed up.
+What happened to it?
+```
+
+`investigate_message_delivery` takes a recipient and/or Message-Id, searches logs
+across the account and every subaccount under the API key (so multi-tenant
+operators do not need to know which tenant sent it first), and returns each
+matching message with its sending domain, subaccount, SMTP response, and an
+outcome such as `delivered`, `suppressed`, `bounced`, `retrying`, `rejected`, or
+`not_found_in_window`. It also checks the recipient against the sending domain's
+bounce, unsubscribe, complaint, and allowlist entries. The tool is read-only: it
+does not resend or remove suppressions.
+
+> [!NOTE]
+> `delivered` means the mailbox provider accepted the message. It is not proof of
+> inbox placement.
 
 #### Troubleshoot DNS
 

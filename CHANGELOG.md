@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **New investigation tool:** `investigate_message_delivery` answers "why didn't
+  this email arrive?" for a single recipient and/or Message-Id. It queries
+  `POST /v1/analytics/logs` across the account and all subaccounts, groups events
+  into per-message timelines, classifies each outcome (`delivered`,
+  `delayed_bounce`, `suppressed`, `bounced`, `retries_exhausted`,
+  `permanent_failure`, `retrying`, `rejected`, `accepted_pending`, `stored`, or
+  `not_found_in_window`), and checks the recipient against the sending domain's
+  bounce, unsubscribe, complaint, and allowlist entries. Read-only; tagged `send`.
+
 ## 2.1.0
 
 ### Added
