@@ -17,6 +17,7 @@ export async function makeMailgunRequest(
   requestPath: string,
   data: Record<string, unknown> | null = null,
   contentType: string = "application/x-www-form-urlencoded",
+  headers: Record<string, string> = {},
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const cleanPath = requestPath.startsWith("/") ? requestPath.substring(1) : requestPath;
@@ -29,6 +30,7 @@ export async function makeMailgunRequest(
       headers: {
         Authorization: `Basic ${auth}`,
         "Content-Type": contentType,
+        ...headers,
       },
     };
 

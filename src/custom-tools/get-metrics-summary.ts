@@ -1,7 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { makeMailgunRequest, MailgunApiError } from "../api.js";
+import { makeMailgunRequest } from "../api.js";
 import { META_TAGS_KEY, type Tag } from "../tags.js";
+import { errorResult, upstreamErrorResult } from "./shared.js";
 
 // --- Types ---
 
@@ -10,15 +11,6 @@ export interface MetricsSummaryOutput {
   rates: Record<string, number>;
   data_gaps: string[];
   window: { start: string; end: string };
-}
-
-export interface MetricsSummaryError {
-  error: {
-    code: string;
-    message: string;
-    retryable: boolean;
-    details: string;
-  };
 }
 
 interface MetricsResponse {
@@ -154,17 +146,6 @@ export function buildMetricsSummaryOutput(data: MetricsResponse): MetricsSummary
   };
 }
 
-// --- Error builder ---
-
-function buildErrorResponse(
-  code: string,
-  message: string,
-  retryable: boolean,
-  details: string,
-): MetricsSummaryError {
-  return { error: { code, message, retryable, details } };
-}
-
 // --- Tool registration ---
 
 export function register(server: McpServer, tags: readonly Tag[] = []): void {
@@ -195,30 +176,22 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
     },
     async (params) => {
       if (!params.domain || params.domain.trim() === "") {
-        const err = buildErrorResponse(
+        return errorResult(
           "INVALID_DOMAIN",
           "A domain is required to retrieve metrics.",
           false,
           "The 'domain' parameter was empty or missing.",
         );
-        return {
-          isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify(err, null, 2) }],
-        };
       }
 
       if ((params.start && !params.end) || (params.end && !params.start)) {
         const missing = params.start ? "end" : "start";
-        const err = buildErrorResponse(
+        return errorResult(
           "INVALID_WINDOW",
           "An unbounded time window is not supported. Provide both start and end, or use duration.",
           false,
           `Parameter '${missing === "end" ? "start" : "end"}' was provided without '${missing}'.`,
         );
-        return {
-          isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify(err, null, 2) }],
-        };
       }
 
       try {
@@ -244,22 +217,11 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
           content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
         };
       } catch (error) {
-        const isApiError = error instanceof MailgunApiError;
-        const statusCode = isApiError ? error.statusCode : 0;
-        const retryable = statusCode >= 500 || statusCode === 429;
-
-        const err = buildErrorResponse(
-          "UPSTREAM_API_ERROR",
+        return upstreamErrorResult(
+          error,
+          "POST /v1/analytics/metrics",
           "Unable to retrieve analytics metrics for the selected window.",
-          retryable,
-          isApiError
-            ? `POST /v1/analytics/metrics returned ${error.statusCode}: ${error.apiMessage ?? error.message}`
-            : `POST /v1/analytics/metrics failed: ${error instanceof Error ? error.message : String(error)}`,
         );
-        return {
-          isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify(err, null, 2) }],
-        };
       }
     },
   );

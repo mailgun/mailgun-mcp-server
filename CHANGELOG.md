@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **New investigation tool:** `investigate_message_delivery` answers "why didn't
+  this email arrive?" for a single recipient and/or Message-Id. It queries
+  `POST /v1/analytics/logs` across the account and all subaccounts, groups events
+  into per-message timelines, classifies each outcome (`delivered`, `failed`,
+  `suppressed`, `retrying`, `rejected`, `accepted_pending`, or `unknown`), and
+  checks the recipient against the sending domain's bounce, unsubscribe,
+  complaint, and allowlist entries, on behalf of the subaccount that sent it.
+  Read-only; tagged `send`.
+- `makeMailgunRequest` accepts optional extra request headers.
+
 ## 2.1.0
 
 ### Added
