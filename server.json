@@ -28,6 +28,11 @@
           "description": "API region: us or eu",
           "isRequired": false,
           "default": "us"
+        },
+        {
+          "name": "MAILGUN_MCP_TAGS",
+          "description": "Comma-separated tags or toolsets to load instead of the default core tools.",
+          "isRequired": false
         }
       ],
       "transport": {

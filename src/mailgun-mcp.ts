@@ -1,18 +1,12 @@
 #!/usr/bin/env node
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { formatHelp, formatInvalidTagsMessage, formatTagList, resolveActiveTags } from "./cli.js";
 import { MAILGUN_API_KEY, OPENAPI_YAML } from "./config.js";
 import { loadOpenApiSpec } from "./openapi.js";
-import { generateToolsFromOpenApi } from "./tools.js";
-import { registerCustomTools } from "./custom-tools/index.js";
-import { PACKAGE_VERSION } from "./version.js";
+import { createMailgunServer, registerMailgunTools } from "./server.js";
 
-export const server = new McpServer({
-  name: "mailgun",
-  version: PACKAGE_VERSION,
-});
+export const server = createMailgunServer();
 
 export async function main(): Promise<void> {
   try {
@@ -42,8 +36,7 @@ export async function main(): Promise<void> {
 
     const openApiSpec = loadOpenApiSpec(OPENAPI_YAML);
 
-    generateToolsFromOpenApi(openApiSpec, server, cli.activeTags);
-    registerCustomTools(server, cli.activeTags);
+    registerMailgunTools(server, openApiSpec, cli.activeTags);
 
     const transport = new StdioServerTransport();
     await server.connect(transport);

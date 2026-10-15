@@ -1,7 +1,7 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { makeMailgunRequest, MailgunApiError } from "../api.js";
-import { META_TAGS_KEY, type Tag } from "../tags.js";
+import { type ToolClassification, toolMeta } from "../tags.js";
 
 // --- Types ---
 
@@ -167,9 +167,11 @@ function buildErrorResponse(
 
 // --- Tool registration ---
 
-export function register(server: McpServer, tags: readonly Tag[] = []): void {
-  server.registerTool(
-    "get_metrics_summary",
+export const TOOL_NAME = "get_metrics_summary";
+
+export function register(server: McpServer, classification: ToolClassification): RegisteredTool {
+  return server.registerTool(
+    TOOL_NAME,
     {
       description:
         "Retrieve a structured summary of key sending metrics (counts and computed rates) for a domain and time window. Returns raw counts, decimal rates, and data-gap reporting. Use as a data primitive for delivery-health questions.",
@@ -191,7 +193,8 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
           .optional()
           .describe("Timezone for the window (e.g. 'UTC', 'America/New_York'). Defaults to UTC."),
       },
-      _meta: { [META_TAGS_KEY]: [...tags] },
+      annotations: { readOnlyHint: classification.readOnly },
+      _meta: toolMeta(classification),
     },
     async (params) => {
       if (!params.domain || params.domain.trim() === "") {

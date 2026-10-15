@@ -1,5 +1,21 @@
 import { describe, test, expect } from "vitest";
-import { KNOWN_TAGS, parseTagList, shouldRegister } from "../src/tags.js";
+import {
+  KNOWN_TAG_SELECTORS,
+  KNOWN_TAGS,
+  parseTagList,
+  shouldRegister,
+  TOOLSET_IDS,
+  type ToolClassification,
+  toolsetTag,
+} from "../src/tags.js";
+
+const tool = (overrides: Partial<ToolClassification> = {}): ToolClassification => ({
+  tags: ["send"],
+  toolset: "send.templates",
+  core: false,
+  readOnly: true,
+  ...overrides,
+});
 
 describe("parseTagList()", () => {
   test("returns empty result for an empty string", () => {
@@ -45,32 +61,85 @@ describe("parseTagList()", () => {
   });
 });
 
+describe("parseTagList() selectors", () => {
+  test("accepts toolset IDs, core, and all", () => {
+    const result = parseTagList("send.templates, CORE, all, validate");
+    expect(result.tags).toEqual(["send.templates", "core", "all", "validate"]);
+    expect(result.invalid).toEqual([]);
+  });
+
+  test("rejects unknown toolset IDs", () => {
+    const result = parseTagList("send.nope,send.");
+    expect(result.tags).toEqual([]);
+    expect(result.invalid).toEqual(["send.nope", "send."]);
+  });
+
+  test("recognizes every value in KNOWN_TAG_SELECTORS", () => {
+    const result = parseTagList(KNOWN_TAG_SELECTORS.join(","));
+    expect(result.tags).toEqual([...KNOWN_TAG_SELECTORS]);
+    expect(result.invalid).toEqual([]);
+  });
+});
+
+describe("toolsetTag()", () => {
+  test("maps every toolset to a known product tag", () => {
+    expect(toolsetTag("send.templates")).toBe("send");
+    expect(toolsetTag("validate")).toBe("validate");
+    for (const id of TOOLSET_IDS) {
+      expect(KNOWN_TAGS).toContain(toolsetTag(id));
+    }
+  });
+});
+
 describe("shouldRegister()", () => {
-  test('"all" always registers, even with empty entry tags', () => {
-    expect(shouldRegister("all", [])).toBe(true);
-    expect(shouldRegister("all", ["send"])).toBe(true);
-    expect(shouldRegister("all", ["send", "validate"])).toBe(true);
+  test('"default" and "all" always register', () => {
+    expect(shouldRegister("default", tool())).toBe(true);
+    expect(shouldRegister("all", tool())).toBe(true);
+    expect(shouldRegister("all", tool({ tags: ["validate"], toolset: "validate" }))).toBe(true);
   });
 
   test("registers when entry tags intersect active set", () => {
     const active = new Set(["send", "validate"] as const);
-    expect(shouldRegister(active, ["send"])).toBe(true);
-    expect(shouldRegister(active, ["validate"])).toBe(true);
-    expect(shouldRegister(active, ["validate", "inspect"])).toBe(true);
+    expect(shouldRegister(active, tool())).toBe(true);
+    expect(shouldRegister(active, tool({ tags: ["validate"], toolset: "validate" }))).toBe(true);
   });
 
   test("does not register when entry tags are disjoint", () => {
     const active = new Set(["send"] as const);
-    expect(shouldRegister(active, ["validate"])).toBe(false);
-    expect(shouldRegister(active, ["inspect", "optimize"])).toBe(false);
+    expect(shouldRegister(active, tool({ tags: ["validate"], toolset: "validate" }))).toBe(false);
+    expect(shouldRegister(active, tool({ tags: ["inspect"], toolset: "inspect" }))).toBe(false);
   });
 
-  test("does not register when entry has no tags and active is filtered", () => {
+  test("a product tag matches every toolset under it", () => {
     const active = new Set(["send"] as const);
-    expect(shouldRegister(active, [])).toBe(false);
+    expect(shouldRegister(active, tool({ toolset: "send.templates" }))).toBe(true);
+    expect(shouldRegister(active, tool({ toolset: "send.lists" }))).toBe(true);
+  });
+
+  test("a toolset ID matches only that toolset", () => {
+    const active = new Set(["send.templates"] as const);
+    expect(shouldRegister(active, tool({ toolset: "send.templates" }))).toBe(true);
+    expect(shouldRegister(active, tool({ toolset: "send.lists" }))).toBe(false);
+  });
+
+  test("core matches only core tools", () => {
+    const active = new Set(["core"] as const);
+    expect(shouldRegister(active, tool({ core: true }))).toBe(true);
+    expect(shouldRegister(active, tool({ core: false }))).toBe(false);
+  });
+
+  test("selectors combine with OR semantics", () => {
+    const active = new Set(["core", "send.lists"] as const);
+    expect(shouldRegister(active, tool({ core: true }))).toBe(true);
+    expect(shouldRegister(active, tool({ toolset: "send.lists" }))).toBe(true);
+    expect(shouldRegister(active, tool({ toolset: "send.routes" }))).toBe(false);
+  });
+
+  test("all inside a set registers everything", () => {
+    expect(shouldRegister(new Set(["all"] as const), tool())).toBe(true);
   });
 
   test("does not register against an empty active set", () => {
-    expect(shouldRegister(new Set(), ["send"])).toBe(false);
+    expect(shouldRegister(new Set(), tool())).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { z } from "zod";
 import type {
   OpenApiOperation,
@@ -10,7 +10,8 @@ import { endpoints, parseEndpointEntry } from "./endpoints.js";
 import { makeMailgunRequest, MailgunApiError } from "./api.js";
 import { getOperationDetails, getRequestContentType } from "./openapi.js";
 import { buildParamsSchema, sanitizeToolId } from "./schema.js";
-import { type ActiveTags, META_TAGS_KEY, shouldRegister, type Tag } from "./tags.js";
+import { type ActiveTags, shouldRegister, type ToolClassification, toolMeta } from "./tags.js";
+import type { ToolLoader } from "./toolsets.js";
 
 export const HttpStatus = {
   BAD_REQUEST: 400,
@@ -25,12 +26,13 @@ export function generateToolsFromOpenApi(
   openApiSpec: OpenApiSpec,
   server: McpServer,
   activeTags: ActiveTags = "all",
+  loader?: ToolLoader,
 ): void {
   for (const entry of endpoints) {
     try {
-      const { method, path, toolNameOverride, tags } = parseEndpointEntry(entry);
+      const { method, path, toolNameOverride, ...classification } = parseEndpointEntry(entry);
 
-      if (!shouldRegister(activeTags, tags)) continue;
+      if (!shouldRegister(activeTags, classification)) continue;
 
       const operationDetails = getOperationDetails(openApiSpec, method, path);
 
@@ -51,7 +53,7 @@ export function generateToolsFromOpenApi(
       const toolDescription = operation.summary || `${method.toUpperCase()} ${path}`;
       const contentType = getRequestContentType(operation);
 
-      registerTool(
+      const handle = registerTool(
         server,
         toolId,
         toolDescription,
@@ -61,10 +63,11 @@ export function generateToolsFromOpenApi(
         operation,
         contentType,
         keyMapping,
-        tags,
+        classification,
       );
+      loader?.add({ name: toolId, description: toolDescription, ...classification, handle });
     } catch (error) {
-      const label = typeof entry === "string" ? entry : entry.endpoint;
+      const label = typeof entry.entry === "string" ? entry.entry : entry.entry.endpoint;
       console.error(`Failed to process endpoint ${label}: ${(error as Error).message}`);
     }
   }
@@ -79,16 +82,17 @@ export function registerTool(
   path: string,
   operation: OpenApiOperation,
   contentType: string,
-  keyMapping: Record<string, string> = {},
-  tags: readonly Tag[] = [],
-): void {
+  keyMapping: Record<string, string>,
+  classification: ToolClassification,
+): RegisteredTool {
   const httpMethod = method.toUpperCase();
-  server.registerTool(
+  return server.registerTool(
     toolId,
     {
       description: toolDescription,
       inputSchema: paramsSchema,
-      _meta: { [META_TAGS_KEY]: [...tags] },
+      annotations: { readOnlyHint: classification.readOnly },
+      _meta: toolMeta(classification),
     },
     async (params) => {
       try {
