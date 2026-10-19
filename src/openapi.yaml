@@ -7954,7 +7954,6 @@ paths:
           description: >-
             Maximum number of records to return (optional, default: 100, max:
             1000)
-          required: true
           schema:
             type: integer
         - name: page
@@ -7962,7 +7961,6 @@ paths:
           description: >-
             Page direction relative to the above address, can be `next`,
             `previous` or `last`, if empty, returns the first page
-          required: true
           schema:
             type: string
         - name: term
@@ -7970,7 +7968,6 @@ paths:
           description: >-
             Filter records based on addresses that start with the specified
             substring.
-          required: true
           schema:
             type: string
       responses:
@@ -8264,7 +8261,6 @@ paths:
         - name: address
           in: query
           description: address serving as a "divider" between pages
-          required: true
           schema:
             type: string
         - name: term
@@ -8272,7 +8268,6 @@ paths:
           description: >-
             Filter records based on addresses that start with the specified
             substring.
-          required: true
           schema:
             type: string
       responses:
@@ -8548,7 +8543,6 @@ paths:
         - name: address
           in: query
           description: address serving as a "divider" between pages
-          required: true
           schema:
             type: string
         - name: term
@@ -8556,7 +8550,6 @@ paths:
           description: >-
             Filter records based on addresses that start with the specified
             substring.
-          required: true
           schema:
             type: string
       responses:
@@ -8818,7 +8811,6 @@ paths:
         - name: address
           in: query
           description: address serving as a "divider" between pages
-          required: true
           schema:
             type: string
         - name: term
@@ -8826,7 +8818,6 @@ paths:
           description: >-
             Filter records based on addresses that start with the specified
             substring.
-          required: true
           schema:
             type: string
       responses:
