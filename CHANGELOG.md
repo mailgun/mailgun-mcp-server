@@ -2,27 +2,22 @@
 
 ## 2.3.0
 
-### Changed
-
-- **Smaller default tool set.** With no `--tags` or
-  `MAILGUN_MCP_TAGS`, the server now loads 10 core tools plus 3 "tool-loading" tools
-  instead of all 74. The server now accepts `--tags all` (or `MAILGUN_MCP_TAGS=all`) 
-  to load every tool at startup as before. An empty `MAILGUN_MCP_TAGS` now means the  
-  default (load core tools), not load all tools.
-
 ### Added
 
+- **Opt-in on-demand loading.** `--tags dynamic` (or `MAILGUN_MCP_TAGS=dynamic`) starts
+  the server with 15 core tools plus 3 "tool-loading" tools instead of all 74, about
+  29 KB of tool definitions instead of about 69 KB. The model calls
+  `mailgun_list_toolsets` and `mailgun_enable_toolset` to load more tools, and the
+  server sends `notifications/tools/list_changed` when it does. `mailgun_call_tool` runs
+  read-only tools by name, whether or not their toolset is loaded, for clients that
+  don't refresh their tool list, and refuses core tools and tools that change data.
+  The default is unchanged: every tool loads at startup.
 - **Toolsets.** The `send` tag is split into `send.<group>` toolsets (`send.messages`,
   `send.domains`, `send.webhooks`, `send.account`, `send.message_tags`,
   `send.analytics`, `send.suppressions`, `send.routes`, `send.lists`,
   `send.templates`); `validate`, `optimize`, and `inspect` are toolsets of their own.
-  `--tags` accepts toolset IDs, `core`, and `all`, and `send` still matches every
+  `--tags` accepts toolset IDs, `core`, `all`, and `dynamic`, and `send` still matches every
   `send.<group>` toolset. `--list-tags` prints every value with a description.
-- **On-demand loading.** In default mode the model can call `mailgun_list_toolsets`
-  and `mailgun_enable_toolset` to load more tools; the server sends
-  `notifications/tools/list_changed` when it does. `mailgun_call_tool` runs loaded
-  read-only tools for clients that don't refresh their tool list, and refuses core
-  tools and tools that change data.
 - **`readOnlyHint` annotations** on every tool.
 - **`_meta["com.mailgun/toolset"]`** on every tool, next to
   `_meta["com.mailgun/tags"]`.

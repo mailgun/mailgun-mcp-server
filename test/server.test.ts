@@ -21,13 +21,18 @@ const openApiSpec = loadOpenApiSpec(new URL("../src/openapi.yaml", import.meta.u
 const CORE_TOOLS = [
   "get-v3-domain-bounces",
   "get-v3-domain-bounces-address",
+  "get-v3-domain-complaints",
   "get-v3-domain-templates",
+  "get-v3-domain-unsubscribes",
+  "get-v3-domains-name-tracking",
   "get-v4-domains",
   "get-v4-domains-name",
   "get_metrics_summary",
   "post-v1-analytics-logs",
   "post-v1-analytics-metrics",
+  "post-v2-bounce-classification-metrics",
   "post-v3-domain-messages",
+  "put-v4-domains-name-verify",
   "validate_email",
 ];
 const META_TOOLS = ["mailgun_call_tool", "mailgun_enable_toolset", "mailgun_list_toolsets"];
@@ -42,8 +47,8 @@ const TEMPLATE_TOOLS = [
   "put-v3-domain-templates-template-versions-version",
 ];
 
-// Serialized tools/list budget for default mode, so the footprint can't silently grow back.
-const DEFAULT_MODE_BYTE_BUDGET = 27_000;
+// Serialized tools/list budget for dynamic mode, so the footprint can't silently grow back.
+const DYNAMIC_MODE_BYTE_BUDGET = 31_000;
 
 let client: Client;
 let listChangedCount: number;
@@ -83,8 +88,8 @@ afterEach(async () => {
   await client.close();
 });
 
-describe("default mode", () => {
-  beforeEach(() => connect("default"));
+describe("dynamic mode", () => {
+  beforeEach(() => connect("dynamic"));
 
   test("lists only the core tools and the meta-tools", async () => {
     expect(await toolNames()).toEqual([...CORE_TOOLS, ...META_TOOLS].toSorted());
@@ -92,7 +97,7 @@ describe("default mode", () => {
 
   test("stays under the tools/list byte budget", async () => {
     const { tools } = await client.listTools();
-    expect(JSON.stringify(tools).length).toBeLessThan(DEFAULT_MODE_BYTE_BUDGET);
+    expect(JSON.stringify(tools).length).toBeLessThan(DYNAMIC_MODE_BYTE_BUDGET);
   });
 
   test("hints at more tools only on core tools whose toolset has them", async () => {
@@ -107,7 +112,15 @@ describe("default mode", () => {
   test("marks every tool with readOnlyHint", async () => {
     const { tools } = await client.listTools();
     const writes = tools.filter((tool) => tool.annotations?.readOnlyHint === false);
-    expect(writes.map((tool) => tool.name)).toEqual(["post-v3-domain-messages"]);
+    expect(writes.map((tool) => tool.name)).toEqual([
+      "post-v3-domain-messages",
+      "mailgun_enable_toolset",
+    ]);
+    expect(tools.find((tool) => tool.name === "mailgun_enable_toolset")!.annotations).toEqual({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+    });
     expect(tools.every((tool) => typeof tool.annotations?.readOnlyHint === "boolean")).toBe(true);
   });
 
@@ -120,7 +133,7 @@ describe("default mode", () => {
 });
 
 describe("mailgun_list_toolsets", () => {
-  beforeEach(() => connect("default"));
+  beforeEach(() => connect("dynamic"));
 
   test("lists every toolset with per-tool summaries and markers", async () => {
     const output = text(await call("mailgun_list_toolsets"));
@@ -138,7 +151,7 @@ describe("mailgun_list_toolsets", () => {
 });
 
 describe("mailgun_enable_toolset", () => {
-  beforeEach(() => connect("default"));
+  beforeEach(() => connect("dynamic"));
 
   test("loads a toolset and sends a single list_changed notification", async () => {
     const result = await call("mailgun_enable_toolset", { toolsets: ["send.templates"] });
@@ -170,6 +183,11 @@ describe("mailgun_enable_toolset", () => {
     expect(tools.find((tool) => tool.name === "post-v3-domain-templates")!.write).toBe(true);
   });
 
+  test("uses the singular when one tool is loaded", async () => {
+    const output = text(await call("mailgun_enable_toolset", { toolsets: ["optimize"] }));
+    expect(output).toMatch(/^Loaded 1 tool from optimize\./);
+  });
+
   test("tells the model how to reach write tools a client doesn't show", async () => {
     const output = text(await call("mailgun_enable_toolset", { toolsets: ["send.templates"] }));
     expect(output).toContain("--tags core,send.templates");
@@ -195,7 +213,7 @@ describe("mailgun_enable_toolset", () => {
 });
 
 describe("mailgun_call_tool", () => {
-  beforeEach(() => connect("default"));
+  beforeEach(() => connect("dynamic"));
 
   test("runs a read-only tool that isn't loaded", async () => {
     const result = await call("mailgun_call_tool", {
@@ -256,7 +274,7 @@ describe("static modes", () => {
   test.each<[string, ActiveTags, number]>([
     ["all", "all", 74],
     ["send", new Set(["send"]), 71],
-    ["core", new Set(["core"]), 10],
+    ["core", new Set(["core"]), 15],
     ["send.templates", new Set(["send.templates"]), 8],
     ["validate,inspect", new Set(["validate", "inspect"]), 2],
   ])("--tags %s registers %i tools and no meta-tools", async (_label, activeTags, count) => {

@@ -263,9 +263,9 @@ describe("register()", () => {
 });
 
 describe("registerCustomTools()", () => {
-  test('default activeTags="all" registers get_metrics_summary', () => {
+  test('"all" registers get_metrics_summary', () => {
     const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
-    registerCustomTools({ registerTool: mockRegisterTool } as never);
+    registerCustomTools({ registerTool: mockRegisterTool } as never, "all");
 
     const names = mockRegisterTool.mock.calls.map((c) => c[0]);
     expect(names).toContain("get_metrics_summary");
@@ -307,7 +307,7 @@ describe("registerCustomTools()", () => {
     const mockRegisterTool = vi.fn<(...args: unknown[]) => unknown>(() => handle);
     const loader = new ToolLoader();
 
-    registerCustomTools({ registerTool: mockRegisterTool } as never, "default", loader);
+    registerCustomTools({ registerTool: mockRegisterTool } as never, "dynamic", loader);
 
     expect(loader.get("get_metrics_summary")).toMatchObject({
       toolset: "send.analytics",

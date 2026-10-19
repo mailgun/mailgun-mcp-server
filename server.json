@@ -31,7 +31,7 @@
         },
         {
           "name": "MAILGUN_MCP_TAGS",
-          "description": "Comma-separated tags or toolsets to load instead of the default core tools.",
+          "description": "Comma-separated tags or toolsets to load instead of all tools, or dynamic to start with core tools and load the rest on demand.",
           "isRequired": false
         }
       ],

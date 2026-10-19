@@ -1,10 +1,4 @@
 import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
-import {
-  getParseErrorMessage,
-  normalizeObjectSchema,
-  safeParseAsync,
-} from "@modelcontextprotocol/sdk/server/zod-compat.js";
-import { toJsonSchemaCompat } from "@modelcontextprotocol/sdk/server/zod-json-schema-compat.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type {
   CallToolResult,
@@ -45,7 +39,7 @@ export function toolsetHint(toolset: ToolsetId): string {
   return `Related tools in toolset "${toolset}" can be loaded with ${ENABLE_TOOLSET}.`;
 }
 
-// Keeps the SDK handle of every tool registered in default mode, keyed by name.
+// Keeps the SDK handle of every tool registered in dynamic mode, keyed by name.
 export class ToolLoader {
   private readonly tools = new Map<string, LoadedTool>();
 
@@ -128,10 +122,16 @@ export function formatToolsetSummary(summaries: readonly ToolsetSummary[]): stri
   return lines.join("\n");
 }
 
+// Every tool here is registered with zod 4 schemas; the SDK types them as zod 3 or 4.
+function inputSchemaOf(handle: RegisteredTool): z.core.$ZodType | undefined {
+  return handle.inputSchema as z.core.$ZodType | undefined;
+}
+
+// Same options the SDK uses for tools/list, so both return the same schema.
 function inputJsonSchema(handle: RegisteredTool): unknown {
-  const schema = normalizeObjectSchema(handle.inputSchema);
+  const schema = inputSchemaOf(handle);
   return schema
-    ? toJsonSchemaCompat(schema, { strictUnions: true, pipeStrategy: "input" })
+    ? z.toJSONSchema(schema, { target: "draft-7", io: "input" })
     : { type: "object", properties: {} };
 }
 
@@ -139,8 +139,9 @@ function enableResult(toolsets: readonly ToolsetId[], loaded: readonly LoadedToo
   if (loaded.length === 0) {
     return `Nothing new to load: ${toolsets.join(", ")} already loaded.`;
   }
+  const plural = loaded.length === 1 ? "tool" : "tools";
   const lines = [
-    `Loaded ${loaded.length} tools from ${toolsets.join(", ")}. They should now appear in your tool list.`,
+    `Loaded ${loaded.length} ${plural} from ${toolsets.join(", ")}. They should now appear in your tool list.`,
     `If they don't, run the read-only ones with ${CALL_TOOL}.`,
   ];
   const writeToolsets = [...new Set(loaded.filter((t) => !t.readOnly).map((t) => t.toolset))];
@@ -181,13 +182,13 @@ async function callTool(
   }
 
   const handler = tool.handle.handler as unknown as ToolHandler;
-  const schema = normalizeObjectSchema(tool.handle.inputSchema);
+  const schema = inputSchemaOf(tool.handle);
   if (!schema) return handler(extra);
 
-  const parsed = await safeParseAsync(schema, args);
+  const parsed = await z.safeParseAsync(schema, args);
   if (!parsed.success) {
     return textResult(
-      `Invalid arguments for ${name}: ${getParseErrorMessage(parsed.error)}. ` +
+      `Invalid arguments for ${name}: ${parsed.error.message}. ` +
         `Call ${ENABLE_TOOLSET} with "${tool.toolset}" to get its input schema.`,
       true,
     );
@@ -221,7 +222,7 @@ export function registerMetaTools(server: McpServer, loader: ToolLoader): void {
           .min(1)
           .describe('Toolset IDs to load, for example ["send.templates"].'),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     ({ toolsets }) => textResult(enableResult(toolsets, loader.enable(toolsets))),
   );
@@ -230,9 +231,10 @@ export function registerMetaTools(server: McpServer, loader: ToolLoader): void {
     CALL_TOOL,
     {
       description:
-        `Run a read-only Mailgun tool that was loaded with ${ENABLE_TOOLSET} but doesn't appear in ` +
-        "your tool list. Use it only when your client hasn't picked up newly loaded tools; " +
-        "otherwise call the tool directly. Core tools and tools that change data can't be run this way.",
+        "Run a read-only Mailgun tool by name, whether or not its toolset is loaded. Use it only " +
+        "for tools that aren't in your tool list; otherwise call the tool directly. " +
+        `${ENABLE_TOOLSET} returns each tool's input schema. Core tools and tools that change ` +
+        "data can't be run this way.",
       inputSchema: {
         name: z.string().describe("Tool name, for example get-v3-domain-templates-template."),
         arguments: z

@@ -1,7 +1,7 @@
 import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { makeMailgunRequest, MailgunApiError } from "../api.js";
-import { type ToolClassification, toolMeta } from "../tags.js";
+import { type ToolClassification, toolConfig } from "../tags.js";
 
 // --- Types ---
 
@@ -193,8 +193,7 @@ export function register(server: McpServer, classification: ToolClassification):
           .optional()
           .describe("Timezone for the window (e.g. 'UTC', 'America/New_York'). Defaults to UTC."),
       },
-      annotations: { readOnlyHint: classification.readOnly },
-      _meta: toolMeta(classification),
+      ...toolConfig(classification),
     },
     async (params) => {
       if (!params.domain || params.domain.trim() === "") {

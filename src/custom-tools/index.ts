@@ -24,7 +24,7 @@ const customTools: readonly CustomToolManifestEntry[] = [
 
 export function registerCustomTools(
   server: McpServer,
-  activeTags: ActiveTags = "all",
+  activeTags: ActiveTags,
   loader?: ToolLoader,
 ): void {
   for (const { name, register, ...classification } of customTools) {

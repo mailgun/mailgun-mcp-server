@@ -6,11 +6,11 @@ import type {
   PathParametersResult,
   SeparatedParameters,
 } from "./types.js";
-import { endpoints, parseEndpointEntry } from "./endpoints.js";
+import { endpointLabel, endpoints, parseEndpointEntry } from "./endpoints.js";
 import { makeMailgunRequest, MailgunApiError } from "./api.js";
 import { getOperationDetails, getRequestContentType } from "./openapi.js";
 import { buildParamsSchema, sanitizeToolId } from "./schema.js";
-import { type ActiveTags, shouldRegister, type ToolClassification, toolMeta } from "./tags.js";
+import { type ActiveTags, shouldRegister, type ToolClassification, toolConfig } from "./tags.js";
 import type { ToolLoader } from "./toolsets.js";
 
 export const HttpStatus = {
@@ -25,12 +25,12 @@ const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,53}$/;
 export function generateToolsFromOpenApi(
   openApiSpec: OpenApiSpec,
   server: McpServer,
-  activeTags: ActiveTags = "all",
+  activeTags: ActiveTags,
   loader?: ToolLoader,
 ): void {
-  for (const entry of endpoints) {
+  for (const endpoint of endpoints) {
     try {
-      const { method, path, toolNameOverride, ...classification } = parseEndpointEntry(entry);
+      const { method, path, toolNameOverride, ...classification } = parseEndpointEntry(endpoint);
 
       if (!shouldRegister(activeTags, classification)) continue;
 
@@ -67,8 +67,9 @@ export function generateToolsFromOpenApi(
       );
       loader?.add({ name: toolId, description: toolDescription, ...classification, handle });
     } catch (error) {
-      const label = typeof entry.entry === "string" ? entry.entry : entry.entry.endpoint;
-      console.error(`Failed to process endpoint ${label}: ${(error as Error).message}`);
+      console.error(
+        `Failed to process endpoint ${endpointLabel(endpoint)}: ${(error as Error).message}`,
+      );
     }
   }
 }
@@ -91,8 +92,7 @@ export function registerTool(
     {
       description: toolDescription,
       inputSchema: paramsSchema,
-      annotations: { readOnlyHint: classification.readOnly },
-      _meta: toolMeta(classification),
+      ...toolConfig(classification),
     },
     async (params) => {
       try {

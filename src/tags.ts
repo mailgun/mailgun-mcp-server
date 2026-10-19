@@ -29,16 +29,17 @@ export type ToolsetId = keyof typeof TOOLSETS;
 export const TOOLSET_IDS = Object.keys(TOOLSETS) as [ToolsetId, ...ToolsetId[]];
 
 // Values accepted by --tags / MAILGUN_MCP_TAGS.
-export type TagSelector = Tag | ToolsetId | "core" | "all";
+export type TagSelector = Tag | ToolsetId | "core" | "dynamic" | "all";
 
 export const KNOWN_TAG_SELECTORS: readonly TagSelector[] = [
   "all",
+  "dynamic",
   "core",
   ...new Set<TagSelector>([...KNOWN_TAGS, ...TOOLSET_IDS]),
 ];
 
-// "default": no --tags set (core tools, more on demand). "all" or a set: a fixed tool list.
-export type ActiveTags = "default" | "all" | ReadonlySet<TagSelector>;
+// "dynamic": core tools, more on demand. "all" (the default) or a set: a fixed tool list.
+export type ActiveTags = "dynamic" | "all" | ReadonlySet<TagSelector>;
 
 export interface ToolClassification {
   tags: readonly Tag[];
@@ -62,10 +63,16 @@ export function toolsetTag(toolset: ToolsetId): Tag {
   return toolset.split(".")[0] as Tag;
 }
 
-export function toolMeta(classification: ToolClassification): Record<string, unknown> {
+export function toolConfig(classification: ToolClassification): {
+  annotations: { readOnlyHint: boolean };
+  _meta: Record<string, unknown>;
+} {
   return {
-    [META_TAGS_KEY]: [...classification.tags],
-    [META_TOOLSET_KEY]: classification.toolset,
+    annotations: { readOnlyHint: classification.readOnly },
+    _meta: {
+      [META_TAGS_KEY]: [...classification.tags],
+      [META_TOOLSET_KEY]: classification.toolset,
+    },
   };
 }
 
@@ -93,11 +100,10 @@ export function parseTagList(raw: string): ParseTagListResult {
   return { tags, invalid };
 }
 
-// Default mode registers every tool; ToolLoader decides which ones load.
+// Dynamic mode registers every tool; ToolLoader decides which ones load.
 export function shouldRegister(active: ActiveTags, tool: ToolClassification): boolean {
-  if (active === "default" || active === "all") return true;
+  if (active === "dynamic" || active === "all") return true;
   for (const selector of active) {
-    if (selector === "all") return true;
     if (selector === "core") {
       if (tool.core) return true;
     } else if (isKnownTag(selector)) {

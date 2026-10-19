@@ -21,8 +21,16 @@ export interface ParsedEndpointEntry extends ToolClassification {
   toolNameOverride?: string;
 }
 
+function toSpec(entry: EndpointEntry): Exclude<EndpointEntry, string> {
+  return typeof entry === "string" ? { endpoint: entry } : entry;
+}
+
+export function endpointLabel({ entry }: ToolsetEndpoint): string {
+  return toSpec(entry).endpoint;
+}
+
 export function parseEndpointEntry({ toolset, entry }: ToolsetEndpoint): ParsedEndpointEntry {
-  const spec = typeof entry === "string" ? { endpoint: entry } : entry;
+  const spec = toSpec(entry);
   const [method, path] = spec.endpoint.split(" ");
   return {
     method,
@@ -35,9 +43,9 @@ export function parseEndpointEntry({ toolset, entry }: ToolsetEndpoint): ParsedE
   };
 }
 
-// Endpoints are grouped by toolset. Plain strings take their tag from the toolset
-// and are read-only when they are GET requests. Object form can be used to set a tool name,
-// mark a tool as `core` (loaded by default), or mark a non-GET query as `readOnly`.
+// Endpoints are grouped by toolset. Plain strings take their tag from the toolset and are
+// read-only when they are GET requests. Object form can be used to set a tool name, mark a
+// tool as `core` (loaded at startup in dynamic mode), or mark a non-GET query as `readOnly`.
 // Example:
 // {
 //   endpoint: "POST /v3/{domain_name}/some-query",
@@ -55,11 +63,11 @@ export const endpointGroups: Readonly<Record<ToolsetId, readonly EndpointEntry[]
     // Domains
     { endpoint: "GET /v4/domains", core: true },
     { endpoint: "GET /v4/domains/{name}", core: true },
-    "PUT /v4/domains/{name}/verify",
+    { endpoint: "PUT /v4/domains/{name}/verify", core: true, readOnly: true },
     "GET /v3/domains/{name}/sending_queues",
 
     // Domain Tracking
-    "GET /v3/domains/{name}/tracking",
+    { endpoint: "GET /v3/domains/{name}/tracking", core: true },
     "PUT /v3/domains/{name}/tracking/click",
     "PUT /v3/domains/{name}/tracking/open",
     "PUT /v3/domains/{name}/tracking/unsubscribe",
@@ -113,7 +121,7 @@ export const endpointGroups: Readonly<Record<ToolsetId, readonly EndpointEntry[]
     { endpoint: "POST /v1/analytics/logs", core: true, readOnly: true },
 
     // Bounce Classification
-    { endpoint: "POST /v2/bounce-classification/metrics", readOnly: true },
+    { endpoint: "POST /v2/bounce-classification/metrics", core: true, readOnly: true },
   ],
 
   "send.suppressions": [
@@ -123,11 +131,11 @@ export const endpointGroups: Readonly<Record<ToolsetId, readonly EndpointEntry[]
 
     // Unsubscribes
     "GET /v3/{domain_name}/unsubscribes/{address}",
-    "GET /v3/{domain_name}/unsubscribes",
+    { endpoint: "GET /v3/{domain_name}/unsubscribes", core: true },
 
     // Complaints
     "GET /v3/{domain_name}/complaints/{address}",
-    "GET /v3/{domain_name}/complaints",
+    { endpoint: "GET /v3/{domain_name}/complaints", core: true },
 
     // Allowlist
     "GET /v3/{domain_name}/whitelists/{value}",

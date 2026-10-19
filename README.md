@@ -29,7 +29,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Ma
 - **Inspect (Email Preview)** — Retrieve email rendering and preview test results across clients (`inspect`)
 - **Account Limits** — View custom monthly sending limits
 
-The labels above (`validate`, `optimize`, `inspect`) are the product tags used by [tag filtering](#tag-filtering). Every other capability is registered under the `send` tag, which is split into `send.<group>` [toolsets](#default-tools-and-toolsets).
+The labels above (`validate`, `optimize`, `inspect`) are the product tags used by [tag filtering](#tag-filtering). Every other capability is registered under the `send` tag, which is split into `send.<group>` [toolsets](#on-demand-toolsets).
 
 > [!NOTE]
 > Tools are limited to read and update operations — no delete operations are exposed, which keeps the blast radius of an unintended action small. See [Security Considerations](#security-considerations).
@@ -38,10 +38,7 @@ The labels above (`validate`, `optimize`, `inspect`) are the product tags used b
 
 The server is OpenAPI driven. At startup it parses a bundled Mailgun OpenAPI spec and registers a curated allowlist of endpoints as MCP tools, generating each tool's input schema (via Zod) from the spec. Every tool is annotated with a Mailgun product tag (`send`, `validate`, `optimize`, or `inspect`), the toolset it belongs to, and whether it only reads data.
 
-With no configuration, the server loads a small [core set of tools](#default-tools-and-toolsets) plus three tools the model uses to load more toolsets on demand. This keeps the tool definitions sent to the model small. [Tag filtering](#tag-filtering) loads a fixed set of tools at startup instead, so a given workflow can expose exactly the products it needs.
-
-> [!NOTE]
-> **Changed in 2.2.0:** with no configuration, the server now starts with 10 core tools and 3 loading tools instead of all 74 tools. To load every tool at startup as before, pass `--tags all` or set `MAILGUN_MCP_TAGS=all`.
+By default the server loads every tool at startup. With `--tags dynamic`, it loads a small [core set of tools](#on-demand-toolsets) plus three tools the model uses to load more toolsets on demand, which keeps the tool definitions sent to the model small. [Tag filtering](#tag-filtering) loads a fixed set of tools at startup instead, so a given workflow can expose exactly the products it needs.
 
 ## Prerequisites
 
@@ -174,7 +171,7 @@ Add to `~/.gemini/settings.json`:
 | `MAILGUN_API_KEY`      | Yes      | —                    | Your Mailgun API key                                                                        |
 | `MAILGUN_API_REGION`   | No       | `us`                 | API region: `us` or `eu`                                                                     |
 | `MAILGUN_API_HOSTNAME` | No       | (derived from region) | Override the API hostname (e.g. `api.eu.mailgun.net`). Takes precedence over the region.     |
-| `MAILGUN_MCP_TAGS`     | No       | (core tools, more on demand) | Comma-separated tags or toolsets to load instead of the default, or `all`. Equivalent to `--tags`. The CLI flag takes precedence. |
+| `MAILGUN_MCP_TAGS`     | No       | (all)                | Comma-separated tags or toolsets to load, or `dynamic` for core tools with more loaded on demand. Equivalent to `--tags`. The CLI flag takes precedence. |
 
 ### CLI options
 
@@ -182,26 +179,31 @@ Pass flags after the package name in your client's `args` (e.g. `["-y", "@mailgu
 
 | Flag              | Description                                                                             |
 | ----------------- | -------------------------------------------------------------------------------------- |
-| `--tags <list>`   | Comma-separated tags or toolsets to load instead of the default (core tools, more on demand). Valid: `all`, `core`, `send`, `validate`, `optimize`, `inspect`, and the `send.<group>` toolsets. |
+| `--tags <list>`   | Comma-separated tags or toolsets to load (default: all). Valid: `all`, `dynamic`, `core`, `send`, `validate`, `optimize`, `inspect`, and the `send.<group>` toolsets. |
 | `--list-tags`     | Print every valid `--tags` value with a description and exit.                         |
 | `--help`, `-h`    | Show usage and exit.                                                                    |
 
-### Default tools and toolsets
+### On-demand toolsets
 
-When neither `--tags` or `MAILGUN_MCP_TAGS` is set, the server loads these core tools:
+With `--tags dynamic` (or `MAILGUN_MCP_TAGS=dynamic`), the server starts with these core tools:
 
-| Tool                            | Purpose                                 |
-| ------------------------------- | --------------------------------------- |
-| `post-v3-domain-messages`       | Send an email                           |
-| `get-v4-domains`                | List domains                            |
-| `get-v4-domains-name`           | Domain details and DNS records          |
-| `get_metrics_summary`           | Summary of key sending metrics          |
-| `post-v1-analytics-metrics`     | Query account metrics                   |
-| `post-v1-analytics-logs`        | Query event logs                        |
-| `get-v3-domain-bounces`         | List bounces                            |
-| `get-v3-domain-bounces-address` | Look up a bounce record                 |
-| `get-v3-domain-templates`       | List templates                          |
-| `validate_email`                | Validate an email address               |
+| Tool                                    | Purpose                         |
+| --------------------------------------- | ------------------------------- |
+| `post-v3-domain-messages`               | Send an email                   |
+| `get-v4-domains`                        | List domains                    |
+| `get-v4-domains-name`                   | Domain details and DNS records  |
+| `put-v4-domains-name-verify`            | Re-check a domain's DNS records |
+| `get-v3-domains-name-tracking`          | Tracking settings               |
+| `get_metrics_summary`                   | Summary of key sending metrics  |
+| `post-v1-analytics-metrics`             | Query account metrics           |
+| `post-v1-analytics-logs`                | Query event logs                |
+| `post-v2-bounce-classification-metrics` | Bounce classification metrics   |
+| `get-v3-domain-bounces`                 | List bounces                    |
+| `get-v3-domain-bounces-address`         | Look up a bounce record         |
+| `get-v3-domain-unsubscribes`            | List unsubscribes               |
+| `get-v3-domain-complaints`              | List complaints                 |
+| `get-v3-domain-templates`               | List templates                  |
+| `validate_email`                        | Validate an email address       |
 
 Every tool belongs to a toolset. The model loads the rest of a toolset when a task needs it:
 
@@ -225,17 +227,18 @@ The model loads toolsets with three extra tools:
 
 - **`mailgun_list_toolsets`** lists every toolset and its tools, marking which are loaded and which change data.
 - **`mailgun_enable_toolset`** loads one or more toolsets. The server then notifies the client that its tool list changed (`notifications/tools/list_changed`), and the new tools appear alongside the core ones. The response also includes each new tool's input schema.
-- **`mailgun_call_tool`** runs a loaded read-only tool by name. It's a fallback for clients that don't refresh their tool list after a change. It refuses core tools and tools that change data, so those always run as their own tool call.
+- **`mailgun_call_tool`** runs a read-only tool by name, whether or not its toolset is loaded. It's a fallback for clients that don't refresh their tool list after a change. It refuses core tools and tools that change data, so those always run as their own tool call.
 
-Loaded toolsets last until the client disconnects. If your client doesn't pick up newly loaded tools and you need tools that change data, add those toolsets to [`--tags`](#tag-filtering), for example `--tags core,send.templates`.
+Loaded toolsets last until the client disconnects. On-demand loading needs a client that refreshes its tool list when the server reports a change; Claude Code does. In clients that don't, newly loaded tools won't appear: read-only tools still work through `mailgun_call_tool`, and tools that change data need the default (all tools) or [`--tags`](#tag-filtering), for example `--tags core,send.templates`.
 
 ### Tag filtering
 
-Setting `--tags` or `MAILGUN_MCP_TAGS` loads exactly the matching tools at startup, without the loading tools. Use it to narrow the tools shown to the model (for example, only validation tools for a workflow that doesn't send email), or to load everything up front.
+Setting `--tags` or `MAILGUN_MCP_TAGS` to anything other than `dynamic` loads exactly the matching tools at startup, without the loading tools. Use it to narrow the tools shown to the model (for example, only validation tools for a workflow that doesn't send email).
 
 Valid values (run `--list-tags` for descriptions):
 
-- `all` — every tool
+- `all` — every tool (the default)
+- `dynamic` — the core tools, with other toolsets loaded [on demand](#on-demand-toolsets)
 - `core` — only the core tools listed above
 - `send`, `validate`, `optimize`, `inspect` — every tool for that product (`send` covers every `send.<group>` toolset)
 - A toolset ID such as `send.templates`
@@ -263,7 +266,7 @@ Filtering uses **OR semantics**: a tool is loaded if it matches any value in the
 ```json
 "env": {
   "MAILGUN_API_KEY": "YOUR-mailgun-api-key",
-  "MAILGUN_MCP_TAGS": "all"
+  "MAILGUN_MCP_TAGS": "validate,inspect"
 }
 ```
 
@@ -433,7 +436,7 @@ MAILGUN_API_KEY=YOUR-mailgun-api-key npx @modelcontextprotocol/inspector node di
 `npm install` installs a git pre-commit hook (via husky) that runs `oxlint --fix` and `oxfmt` on staged TypeScript/JavaScript files and runs `npm run check:versions`. Fixable issues are auto-fixed and re-staged; commits that introduce unfixable lint errors or version-sync mismatches are rejected. If you already had a local clone before this change, run `npm install` once to install the hook.
 
 ### Note on adding [endpoints](https://github.com/mailgun/mailgun-mcp-server/blob/main/src/endpoints.ts)
-Endpoints are grouped by toolset in `endpointGroups`. A plain string entry takes its product tag from its toolset (`send.templates` → `send`) and is treated as read-only only if it's a `GET`. Use the object form of `EndpointEntry` to set a tool name, mark a tool as `core` (loaded by default), or mark a `POST` that only queries data as `readOnly: true`.
+Endpoints are grouped by toolset in `endpointGroups`. A plain string entry takes its product tag from its toolset (`send.templates` → `send`) and is treated as read-only only if it's a `GET`. Use the object form of `EndpointEntry` to set a tool name, mark a tool as `core` (loaded at startup in dynamic mode), or mark a `POST` that only queries data as `readOnly: true`.
 
 ## Security Considerations
 
@@ -459,7 +462,7 @@ As with any MCP server, a crafted or adversarial prompt could trick the AI assis
 
 ### Tool loading and approvals
 
-Every tool carries the MCP `readOnlyHint` annotation, so clients can tell tools that only read data from tools that change it (for example when asking for approval). The three "tool-loading" tools are read-only. `mailgun_call_tool` runs only read-only tools that aren't in the core set, so approving it can never send email or change account settings. Tools that change data always run as their own tool call.
+Every tool carries the MCP `readOnlyHint` annotation, so clients can tell tools that only read data from tools that change it (for example when asking for approval). `mailgun_list_toolsets` and `mailgun_call_tool` are read-only. `mailgun_enable_toolset` changes which tools the session sees, so it isn't marked read-only, but it never changes anything in Mailgun. `mailgun_call_tool` runs only read-only tools that aren't in the core set, so approving it can never send email or change account settings. Tools that change data always run as their own tool call.
 
 Loading toolsets on demand reduces what the model sees; it isn't an access control, because the model can load any toolset. To limit which tools the server exposes at all, use [`--tags`](#tag-filtering).
 

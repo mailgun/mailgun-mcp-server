@@ -18,7 +18,7 @@ export function registerMailgunTools(
   openApiSpec: OpenApiSpec,
   activeTags: ActiveTags,
 ): void {
-  const loader = activeTags === "default" ? new ToolLoader() : undefined;
+  const loader = activeTags === "dynamic" ? new ToolLoader() : undefined;
   generateToolsFromOpenApi(openApiSpec, server, activeTags, loader);
   registerCustomTools(server, activeTags, loader);
 

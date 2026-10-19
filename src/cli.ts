@@ -62,27 +62,31 @@ export function resolveActiveTags(argv: readonly string[], env: NodeJS.ProcessEn
   const { showHelp, listTags, cliTagsRaw } = parseArgv(argv);
 
   // CLI takes precedence over env. An unset, empty, or whitespace-only value is
-  // treated as "no filter specified" (activeTags === "default").
+  // treated as "no filter specified" (activeTags === "all").
   const rawSource = cliTagsRaw !== undefined ? cliTagsRaw : env[TAGS_ENV_VAR];
 
   if (rawSource === undefined || rawSource.trim() === "") {
-    return { activeTags: "default", showHelp, listTags, invalid: [] };
+    return { activeTags: "all", showHelp, listTags, invalid: [] };
   }
 
   const { tags, invalid } = parseTagList(rawSource);
 
   if (invalid.length > 0) {
-    return { activeTags: "default", showHelp, listTags, invalid };
+    return { activeTags: "all", showHelp, listTags, invalid };
   }
 
   // Input was non-empty but contained only separators/whitespace.
   // Treat the same as an empty value.
   if (tags.length === 0) {
-    return { activeTags: "default", showHelp, listTags, invalid: [] };
+    return { activeTags: "all", showHelp, listTags, invalid: [] };
   }
 
   if (tags.includes("all")) {
     return { activeTags: "all", showHelp, listTags, invalid: [] };
+  }
+
+  if (tags.includes("dynamic")) {
+    return { activeTags: "dynamic", showHelp, listTags, invalid: [] };
   }
 
   return {
@@ -96,8 +100,9 @@ export function resolveActiveTags(argv: readonly string[], env: NodeJS.ProcessEn
 export function formatTagList(): string {
   const toolsetIds: readonly string[] = TOOLSET_IDS;
   const rows: [string, string][] = [
-    ["all", "Every tool, loaded at startup"],
-    ["core", "Only the default core tools"],
+    ["all", "Every tool, loaded at startup (default)"],
+    ["dynamic", "Core tools at startup; the model loads other toolsets on demand"],
+    ["core", "Only the core tools"],
     ...KNOWN_TAGS.filter((tag) => !toolsetIds.includes(tag)).map((tag): [string, string] => [
       tag,
       `Every ${tag}.* toolset`,
@@ -114,10 +119,10 @@ export function formatHelp(): string {
     "Usage: mailgun-mcp-server [options]",
     "",
     "Options:",
-    "  --tags <list>      Comma-separated tags or toolsets to load instead of the default.",
+    "  --tags <list>      Comma-separated tags or toolsets to load (default: all).",
     `                     Tags: ${tagList}.`,
-    "                     Also: send.<group> toolsets, core, and all (see --list-tags).",
-    "                     Default: core tools; the model loads more toolsets on demand.",
+    "                     Also: send.<group> toolsets, core, all, and dynamic (see --list-tags).",
+    "                     dynamic: start with core tools; the model loads more on demand.",
     "  --list-tags        Print valid --tags values with descriptions and exit",
     "  --help, -h         Show this help and exit",
     "",
@@ -129,7 +134,7 @@ export function formatHelp(): string {
     "",
     "Examples:",
     "  MAILGUN_API_KEY=... mailgun-mcp-server",
-    "  MAILGUN_API_KEY=... mailgun-mcp-server --tags all",
+    "  MAILGUN_API_KEY=... mailgun-mcp-server --tags dynamic",
     "  MAILGUN_API_KEY=... mailgun-mcp-server --tags validate,inspect",
     "  MAILGUN_API_KEY=... mailgun-mcp-server --tags core,send.templates",
   ].join("\n");

@@ -8,9 +8,9 @@ import {
 import { KNOWN_TAG_SELECTORS, KNOWN_TAGS, TOOLSET_IDS } from "../src/tags.js";
 
 describe("resolveActiveTags()", () => {
-  test('returns "default" when neither flag nor env is set', () => {
+  test('returns "all" when neither flag nor env is set', () => {
     const result = resolveActiveTags([], {});
-    expect(result.activeTags).toBe("default");
+    expect(result.activeTags).toBe("all");
     expect(result.showHelp).toBe(false);
     expect(result.listTags).toBe(false);
     expect(result.invalid).toEqual([]);
@@ -46,7 +46,7 @@ describe("resolveActiveTags()", () => {
   test("--help is reflected in result without exiting", () => {
     const result = resolveActiveTags(["--help"], {});
     expect(result.showHelp).toBe(true);
-    expect(result.activeTags).toBe("default");
+    expect(result.activeTags).toBe("all");
   });
 
   test("-h is treated as --help", () => {
@@ -57,37 +57,37 @@ describe("resolveActiveTags()", () => {
   test("--list-tags is reflected in result", () => {
     const result = resolveActiveTags(["--list-tags"], {});
     expect(result.listTags).toBe(true);
-    expect(result.activeTags).toBe("default");
+    expect(result.activeTags).toBe("all");
   });
 
   test("unknown tags populate invalid and leave activeTags as default", () => {
     const result = resolveActiveTags(["--tags", "send,foo,bar"], {});
     expect(result.invalid).toEqual(["foo", "bar"]);
-    expect(result.activeTags).toBe("default");
+    expect(result.activeTags).toBe("all");
   });
 
   test("empty --tags value is treated as default", () => {
     const result = resolveActiveTags(["--tags", ""], {
       MAILGUN_MCP_TAGS: "validate",
     });
-    expect(result.activeTags).toBe("default");
+    expect(result.activeTags).toBe("all");
   });
 
   test('--tags "," is treated as default, not a zero-tool filter', () => {
     const result = resolveActiveTags(["--tags", ","], {});
-    expect(result.activeTags).toBe("default");
+    expect(result.activeTags).toBe("all");
     expect(result.invalid).toEqual([]);
   });
 
   test('--tags " , , " is treated as default, not a zero-tool filter', () => {
     const result = resolveActiveTags(["--tags", " , , "], {});
-    expect(result.activeTags).toBe("default");
+    expect(result.activeTags).toBe("all");
     expect(result.invalid).toEqual([]);
   });
 
   test("MAILGUN_MCP_TAGS containing only separators is treated as default", () => {
     const result = resolveActiveTags([], { MAILGUN_MCP_TAGS: " , , " });
-    expect(result.activeTags).toBe("default");
+    expect(result.activeTags).toBe("all");
     expect(result.invalid).toEqual([]);
   });
 
@@ -118,6 +118,16 @@ describe("resolveActiveTags()", () => {
     );
   });
 
+  test('--tags dynamic and MAILGUN_MCP_TAGS=dynamic return "dynamic"', () => {
+    expect(resolveActiveTags(["--tags", "dynamic"], {}).activeTags).toBe("dynamic");
+    expect(resolveActiveTags([], { MAILGUN_MCP_TAGS: "dynamic" }).activeTags).toBe("dynamic");
+  });
+
+  test("all wins over dynamic, and dynamic wins over other values", () => {
+    expect(resolveActiveTags(["--tags", "dynamic,all"], {}).activeTags).toBe("all");
+    expect(resolveActiveTags(["--tags", "dynamic,send.templates"], {}).activeTags).toBe("dynamic");
+  });
+
   test("accepts toolset IDs and core", () => {
     const result = resolveActiveTags(["--tags", "core,send.templates"], {});
     expect(result.activeTags).toEqual(new Set(["core", "send.templates"]));
@@ -132,7 +142,7 @@ describe("formatHelp()", () => {
       expect(help).toContain(tag);
     }
     expect(help).toMatch(/--tags/);
-    expect(help).toMatch(/--tags all/);
+    expect(help).toMatch(/--tags dynamic/);
     expect(help).toMatch(/--list-tags/);
     expect(help).toMatch(/--help/);
   });
@@ -148,12 +158,12 @@ describe("formatTagList()", () => {
     }
   });
 
-  test("starts with all and core, then tags, then toolsets", () => {
+  test("starts with all, dynamic, and core, then tags, then toolsets", () => {
     const names = formatTagList()
       .split("\n")
       .map((line) => line.split(/\s+/)[0]);
-    expect(names.slice(0, 3)).toEqual(["all", "core", "send"]);
-    expect(names.slice(3)).toEqual([...TOOLSET_IDS]);
+    expect(names.slice(0, 4)).toEqual(["all", "dynamic", "core", "send"]);
+    expect(names.slice(4)).toEqual([...TOOLSET_IDS]);
   });
 });
 

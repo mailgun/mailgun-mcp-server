@@ -92,8 +92,8 @@ describe("toolsetTag()", () => {
 });
 
 describe("shouldRegister()", () => {
-  test('"default" and "all" always register', () => {
-    expect(shouldRegister("default", tool())).toBe(true);
+  test('"dynamic" and "all" always register', () => {
+    expect(shouldRegister("dynamic", tool())).toBe(true);
     expect(shouldRegister("all", tool())).toBe(true);
     expect(shouldRegister("all", tool({ tags: ["validate"], toolset: "validate" }))).toBe(true);
   });
@@ -133,10 +133,6 @@ describe("shouldRegister()", () => {
     expect(shouldRegister(active, tool({ core: true }))).toBe(true);
     expect(shouldRegister(active, tool({ toolset: "send.lists" }))).toBe(true);
     expect(shouldRegister(active, tool({ toolset: "send.routes" }))).toBe(false);
-  });
-
-  test("all inside a set registers everything", () => {
-    expect(shouldRegister(new Set(["all"] as const), tool())).toBe(true);
   });
 
   test("does not register against an empty active set", () => {
