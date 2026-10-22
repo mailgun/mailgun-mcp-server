@@ -223,7 +223,7 @@ The `inspect` product exposes an Email Preview QA workflow for checking how an H
 
 ### Composite tools
 
-- **`run_email_preview_qa`** creates a preview test and summarizes it. This CREATES one remote Mailgun preview test and CONSUMES preview quota. It does not send email. The tool issues exactly one create request, polls the render and checks until they settle or the timeout is reached, and returns counts and result references. V2 creation is not idempotent, so the tool never auto retries the create. On a timeout it returns partial results with `timed_out=true` (resume with `get_email_preview_qa`); on an ambiguous transport failure it reports that a test may have been created and recommends reconciling with `list_preview_tests` rather than creating another.
+- **`run_email_preview_qa`** creates a preview test and summarizes it. This CREATES one remote Mailgun preview test and CONSUMES preview quota. It does not send email. The tool issues exactly one create request, polls the render and checks until they settle or the timeout is reached, and returns counts and result references. V2 creation is not idempotent, so the tool never auto retries the create. On a timeout it returns partial results with `timed_out=true` (resume with `get_email_preview_qa`); on an ambiguous transport failure or 5xx it reports that a test may have been created and recommends reconciling with `list_preview_tests` (by subject and a time window around the create, since `reference_id` is not stored upstream) rather than creating another.
 - **`get_email_preview_qa`** resumes and summarizes an existing test by `test_id`. It only reads (it never creates a test), so it is the tool to use for polling a long running test or picking up after a timeout.
 
 ### Inputs

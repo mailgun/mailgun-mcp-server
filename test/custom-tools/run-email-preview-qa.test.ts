@@ -250,20 +250,27 @@ describe("runCreateAndPoll", () => {
 
   test("ambiguous transport failure is not retryable and posts exactly once", async () => {
     const { deps, posts, gets } = fakeDeps({ createError: new Error("socket hang up") });
-    await expect(
-      runCreateAndPoll(validateRunInput({ ...baseInput, referenceId: "lovable-build-123" }), deps),
-    ).rejects.toMatchObject({
+    const error = await runCreateAndPoll(
+      validateRunInput({ ...baseInput, referenceId: "lovable-build-123" }),
+      deps,
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({
       code: "AMBIGUOUS_CREATE",
       retryable: false,
       referenceId: "lovable-build-123",
     });
+    // Upstream drops reference_id, so the hint reconciles by subject and a create-time window.
+    const details = (error as RunEmailPreviewQaError).details;
+    expect(details).toContain("subject 'June campaign'");
+    expect(details).toMatch(/from \d+ to \d+ as Unix timestamps/);
+    expect(details).not.toContain("reference_id");
     expect(posts).toHaveLength(1);
     expect(gets).toHaveLength(0);
   });
 
-  test("a definitive 403 create rejection is reported and not retried", async () => {
+  test.each([401, 403])("a %s create rejection is reported as not entitled", async (statusCode) => {
     const { deps, posts } = fakeDeps({
-      createError: new MailgunApiError("forbidden", 403, "not enabled"),
+      createError: new MailgunApiError("forbidden", statusCode, "not enabled"),
     });
     await expect(runCreateAndPoll(validateRunInput(baseInput), deps)).rejects.toMatchObject({
       code: "NOT_ENTITLED",
@@ -272,14 +279,30 @@ describe("runCreateAndPoll", () => {
     expect(posts).toHaveLength(1);
   });
 
-  test.each([429, 500, 503])(
-    "a definitive %s create error is not retryable and posts exactly once",
+  test.each([400, 404, 429])(
+    "a %s create rejection is not retryable, posts once, and still asks to reconcile",
     async (statusCode) => {
       const { deps, posts } = fakeDeps({
         createError: new MailgunApiError("rejected", statusCode, "nope"),
       });
+      // Upstream can return 400 after the test already exists, so even rejections reconcile.
       await expect(runCreateAndPoll(validateRunInput(baseInput), deps)).rejects.toMatchObject({
         code: "CREATE_REJECTED",
+        retryable: false,
+        details: expect.stringContaining("list_preview_tests"),
+      });
+      expect(posts).toHaveLength(1);
+    },
+  );
+
+  test.each([500, 502, 503, 504])(
+    "a %s create response is ambiguous and posts exactly once",
+    async (statusCode) => {
+      const { deps, posts } = fakeDeps({
+        createError: new MailgunApiError("gateway", statusCode, "upstream"),
+      });
+      await expect(runCreateAndPoll(validateRunInput(baseInput), deps)).rejects.toMatchObject({
+        code: "AMBIGUOUS_CREATE",
         retryable: false,
       });
       expect(posts).toHaveLength(1);
@@ -302,7 +325,8 @@ describe("runCreateAndPoll", () => {
     expect(posts).toHaveLength(1);
   });
 
-  test("a normalization failure after polling is not mislabeled as a poll failure", async () => {
+  test("a normalization failure after create still points at the created test", async () => {
+    // Anything that escapes here would surface as a retryable error and invite a second create.
     const normalizationFailure = new Error("normalization failed");
     const linkResult = new Proxy(LINK_RESULT, {
       get(target, property, receiver) {
@@ -310,15 +334,40 @@ describe("runCreateAndPoll", () => {
         return Reflect.get(target, property, receiver);
       },
     });
-    const { deps } = fakeDeps({
+    const { deps, posts } = fakeDeps({
       createResponse: CREATE_ALL_CHECKS,
       status: RENDER_COMPLETE,
       resultRoutes: { ...RESULT_ROUTES, "/v1/inspect/links/link_001": linkResult },
     });
 
-    await expect(runCreateAndPoll(validateRunInput(baseInput), deps)).rejects.toBe(
-      normalizationFailure,
+    await expect(runCreateAndPoll(validateRunInput(baseInput), deps)).rejects.toMatchObject({
+      code: "POLL_FAILED_AFTER_CREATE",
+      retryable: false,
+      testId: "preview_test_001",
+      details: expect.stringContaining("normalization failed"),
+    });
+    expect(posts).toHaveLength(1);
+  });
+
+  test("a requested check omitted from the status is terminal, not pending", async () => {
+    // Upstream omits link_validation when the HTML has no links and never adds it later.
+    const contentChecking: Record<string, unknown> = { ...RENDER_COMPLETE.content_checking };
+    delete contentChecking.link_validation;
+    const renderWithoutLinks = { ...RENDER_COMPLETE, content_checking: contentChecking };
+    const { deps, posts, gets } = fakeDeps({
+      createResponse: CREATE_ALL_CHECKS,
+      status: renderWithoutLinks,
+    });
+    const output = await runCreateAndPoll(validateRunInput(baseInput), deps);
+
+    expect(output.timed_out).toBe(false);
+    expect(output.checks.link_validation.status).toBe("unavailable");
+    expect(output.checks.image_validation.status).toBe("complete");
+    expect(output.data_gaps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "check_not_run" })]),
     );
+    expect(gets.filter((g) => g === STATUS_PATH)).toHaveLength(1);
+    expect(posts).toHaveLength(1);
   });
 
   test("an explicit empty content_checks selection terminates after one status read", async () => {

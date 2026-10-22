@@ -151,9 +151,22 @@ export function validateRunInput(raw: RunEmailPreviewQaInput): ValidatedRunInput
   };
 }
 
-// Only an upstream 4xx/5xx proves rejection; transport failures leave creation ambiguous.
-function isDefinitiveApiError(error: unknown): error is MailgunApiError {
-  return error instanceof MailgunApiError && error.statusCode >= 400;
+// Upstream drops reference_id, so reconciliation needs the subject plus a window around the create time.
+const RECONCILE_WINDOW_SECONDS = 300;
+
+function reconcileHint(subject: string, createdAtMs: number): string {
+  const unix = Math.floor(createdAtMs / 1000);
+  return `Reconcile with list_preview_tests (subject '${subject}', from ${unix - RECONCILE_WINDOW_SECONDS} to ${unix + RECONCILE_WINDOW_SECONDS} as Unix timestamps) before creating another test.`;
+}
+
+// Upstream can 400 after creating the test and a 5xx is ambiguous, so every branch asks to reconcile.
+function classifyCreateError(
+  error: unknown,
+): "NOT_ENTITLED" | "CREATE_REJECTED" | "AMBIGUOUS_CREATE" {
+  if (!(error instanceof MailgunApiError)) return "AMBIGUOUS_CREATE";
+  if (error.statusCode === 401 || error.statusCode === 403) return "NOT_ENTITLED";
+  if (error.statusCode >= 400 && error.statusCode < 500) return "CREATE_REJECTED";
+  return "AMBIGUOUS_CREATE";
 }
 
 // Core workflow with I/O injected. Exported for deterministic tests.
@@ -164,31 +177,30 @@ export async function runCreateAndPoll(
   const body = buildPreviewCreateRequest(input);
   // The timeout includes the create request.
   const pollDeadline = deps.now() + input.timeoutSeconds * 1000;
+  const createdAtMs = Date.now();
+  const reconcile = reconcileHint(input.subject, createdAtMs);
 
   let created: unknown;
   try {
     created = await deps.request("POST", CREATE_PATH, body);
   } catch (error) {
-    if (isDefinitiveApiError(error)) {
-      const code = error.statusCode === 403 ? "NOT_ENTITLED" : "CREATE_REJECTED";
-      // Never re-POST after a definitive rejection; reconcile possible quota use by listing tests.
-      throw new RunEmailPreviewQaError(
-        code,
-        error.statusCode === 403
-          ? "Email Preview is not enabled for this account, or creation was forbidden."
-          : "Mailgun rejected the email preview test creation request.",
-        false,
-        `POST ${CREATE_PATH} returned ${error.statusCode}: ${error.apiMessage ?? error.message}. Reconcile with list_preview_tests${input.referenceId ? ` using reference_id '${input.referenceId}'` : ""} before creating another test.`,
-        undefined,
-        input.referenceId,
-      );
-    }
-    // The create may have arrived before transport failed, so reconcile instead of re-POSTing.
+    const code = classifyCreateError(error);
+    const upstream =
+      error instanceof MailgunApiError
+        ? `POST ${CREATE_PATH} returned ${error.statusCode}: ${error.apiMessage ?? error.message}.`
+        : `POST ${CREATE_PATH} failed without a definitive response: ${error instanceof Error ? error.message : String(error)}.`;
+    // Never re-POST after a definitive rejection; reconcile possible quota use by listing tests.
+    const message =
+      code === "NOT_ENTITLED"
+        ? "Email Preview is not enabled for this account, or creation was forbidden."
+        : code === "CREATE_REJECTED"
+          ? "Mailgun rejected the email preview test creation request."
+          : "The create request failed after it may have reached Mailgun. A preview test may have been created; a second create was NOT attempted.";
     throw new RunEmailPreviewQaError(
-      "AMBIGUOUS_CREATE",
-      "The create request failed after it may have reached Mailgun. A preview test may have been created; a second create was NOT attempted.",
+      code,
+      message,
       false,
-      `POST ${CREATE_PATH} failed without a definitive response: ${error instanceof Error ? error.message : String(error)}. Reconcile with list_preview_tests${input.referenceId ? ` using reference_id '${input.referenceId}'` : ""} before creating another test.`,
+      `${upstream} ${reconcile}`,
       undefined,
       input.referenceId,
     );
@@ -201,7 +213,7 @@ export async function runCreateAndPoll(
       "CREATE_NO_TEST_ID",
       "The create response did not include a test id.",
       false,
-      `POST ${CREATE_PATH} returned a success response without an 'id'. Reconcile with list_preview_tests${input.referenceId ? ` using reference_id '${input.referenceId}'` : ""} before creating another test.`,
+      `POST ${CREATE_PATH} returned a success response without an 'id'. ${reconcile}`,
       undefined,
       input.referenceId,
     );
@@ -223,12 +235,11 @@ export async function runCreateAndPoll(
       deps,
     );
   } catch (error) {
-    if (!(error instanceof EmailPreviewQaPollError)) throw error;
-    const cause = error.cause;
-    // Creation succeeded, so resume this test instead of re-POSTing.
+    // Creation succeeded; anything escaping here would look retryable and invite a second create.
+    const cause = error instanceof EmailPreviewQaPollError ? error.cause : error;
     throw new RunEmailPreviewQaError(
       "POLL_FAILED_AFTER_CREATE",
-      "The preview test was created, but retrieving its status failed.",
+      "The preview test was created, but collecting its results failed.",
       false,
       `Test '${testId}' was created. Resume with get_email_preview_qa (test_id '${testId}') rather than creating another test. Cause: ${cause instanceof Error ? cause.message : String(cause)}`,
       testId,
@@ -242,7 +253,7 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
     "run_email_preview_qa",
     {
       description:
-        "Create and summarize an email preview QA test from HTML. This CREATES one remote Mailgun Inspect preview test and CONSUMES preview quota; it does NOT send email. It issues exactly one create request, polls the render/checks until they settle or the timeout is reached, and returns counts and result references. V2 creation is not idempotent and this tool never auto-retries the create: on a timeout it returns partial results with timed_out=true (resume with get_email_preview_qa), and on an ambiguous failure it reports that a test may have been created and recommends list_preview_tests rather than creating another.",
+        "Create and summarize an email preview QA test from HTML. This CREATES one remote Mailgun Inspect preview test and CONSUMES preview quota; it does NOT send email. It issues exactly one create request, polls the render/checks until they settle or the timeout is reached, and returns counts and result references. V2 creation is not idempotent and this tool never auto-retries the create: on a timeout it returns partial results with timed_out=true (resume with get_email_preview_qa), and on an ambiguous failure it reports that a test may have been created and recommends list_preview_tests (filtered by subject and a from/to window around the create time) rather than creating another.",
       inputSchema: {
         subject: z.string().describe("Subject line for the preview test (required)."),
         html: z
@@ -264,7 +275,7 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
           .string()
           .optional()
           .describe(
-            "Optional caller-supplied id echoed back and useful for reconciling an ambiguous create via list_preview_tests.",
+            "Optional caller-supplied correlation id echoed back in the create response only. Mailgun does not store it or filter by it, so it cannot be used to look the test up later.",
           ),
         timeout_seconds: timeoutSecondsSchema.describe(
           `How long to poll for the render/checks to settle, in whole seconds (integer 0-${MAX_TIMEOUT_SECONDS}, default ${DEFAULT_TIMEOUT_SECONDS}). On timeout the partial summary is returned with timed_out=true; resume with get_email_preview_qa.`,
