@@ -154,14 +154,29 @@ function normalizeRenderState(render: unknown): RenderState {
 // --- Check references ---
 
 interface CheckReference {
-  requested: boolean;
-  // Exposed distinguishes a terminal empty node from an absent check that is still pending.
+  // False when unrequested; null when a resume finds the check absent and cannot tell why.
+  requested: boolean | null;
+  // False until a status snapshot has been read; nothing is known about the check before then.
+  observed: boolean;
+  // Exposed separates a present-but-empty node from one the snapshot omitted.
   exposed: boolean;
   hasErrors: boolean;
   resultId: string | null;
 }
 
-// Null means unrequested; absent checks without create-time selection remain pending.
+// Before the first status read every check is unobserved; requested follows create-time selection.
+function unobservedCheckReferences(
+  requestedChecks?: ReadonlySet<CheckName>,
+): Record<CheckName, CheckReference> {
+  const result = {} as Record<CheckName, CheckReference>;
+  for (const name of CHECK_NAMES) {
+    const requested = requestedChecks ? requestedChecks.has(name) : null;
+    result[name] = { requested, observed: false, exposed: false, hasErrors: false, resultId: null };
+  }
+  return result;
+}
+
+// Upstream writes references once and never updates them, so an absent check is terminal; null means unrequested.
 function extractCheckResultIds(
   render: unknown,
   requestedChecks?: ReadonlySet<CheckName>,
@@ -171,18 +186,36 @@ function extractCheckResultIds(
   for (const name of CHECK_NAMES) {
     const raw = cc[name];
     if (raw === null) {
-      result[name] = { requested: false, exposed: false, hasErrors: false, resultId: null };
+      result[name] = {
+        requested: false,
+        observed: true,
+        exposed: false,
+        hasErrors: false,
+        resultId: null,
+      };
       continue;
     }
     if (raw === undefined) {
-      const requested = requestedChecks ? requestedChecks.has(name) : true;
-      result[name] = { requested, exposed: false, hasErrors: false, resultId: null };
+      const requested = requestedChecks ? requestedChecks.has(name) : null;
+      result[name] = {
+        requested,
+        observed: true,
+        exposed: false,
+        hasErrors: false,
+        resultId: null,
+      };
       continue;
     }
     const node = asRecord(raw);
     const hasErrors = asArray(node.errors).length > 0;
     const items = asRecord(node.items);
-    result[name] = { requested: true, exposed: true, hasErrors, resultId: str(items.id) };
+    result[name] = {
+      requested: true,
+      observed: true,
+      exposed: true,
+      hasErrors,
+      resultId: str(items.id),
+    };
   }
   return result;
 }
@@ -201,44 +234,52 @@ interface CheckFetch {
   payload?: unknown;
 }
 
-// Completion signal from the detail payload's meta.status (case-insensitive; missing = complete).
-function detailStatus(payload: unknown): "complete" | "processing" {
-  const raw = statusToken(asRecord(asRecord(payload).meta).status);
-  if (
-    raw.startsWith("process") ||
-    raw.startsWith("pending") ||
-    raw.startsWith("queu") ||
-    raw.startsWith("run")
-  ) {
-    return "processing";
-  }
-  return "complete";
+type DetailStatus = "complete" | "processing" | "failed" | "unknown";
+
+// Raw meta.status from a detail payload, for gap messages; null when missing or blank.
+function rawDetailStatus(payload: unknown): string | null {
+  return str(asRecord(asRecord(payload).meta).status);
+}
+
+// Inspect v1 statuses: Processing, Completed/Complete, Failed, Error; anything else (or missing) is unknown.
+function detailStatus(payload: unknown): DetailStatus {
+  const raw = statusToken(rawDetailStatus(payload));
+  if (raw.startsWith("process")) return "processing";
+  if (raw.startsWith("complet")) return "complete";
+  if (raw.startsWith("fail") || raw.startsWith("error")) return "failed";
+  return "unknown";
 }
 
 // Check completion depends on its job and detail endpoint, not client rendering.
 function isCheckTerminal(ref: CheckReference, fetch: CheckFetch): boolean {
-  if (!ref.requested) return true;
+  if (!ref.observed) return false;
+  if (ref.requested === false) return true;
   if (ref.hasErrors) return true;
-  if (ref.resultId !== null) {
-    if (fetch.status === "ok") return detailStatus(fetch.payload) !== "processing";
-    if (fetch.status === "not_found") return true;
-    return false; // not_fetched
-  }
-  // An exposed empty node is unavailable; an absent requested node is still pending.
-  return ref.exposed;
+  // Absent or empty references never gain an id on a later read.
+  if (ref.resultId === null) return true;
+  if (fetch.status === "ok") return detailStatus(fetch.payload) !== "processing";
+  if (fetch.status === "not_found") return true;
+  return false; // not_fetched
 }
 
 // Lifecycle combines reference state with the detail fetch outcome.
 function normalizeCheckLifecycle(ref: CheckReference, fetch: CheckFetch): CheckLifecycle {
-  if (!ref.requested) return "not_requested";
+  if (!ref.observed) return ref.requested === false ? "not_requested" : "processing";
+  if (ref.requested === false) return "not_requested";
   if (ref.hasErrors) return "job_failed";
-  if (ref.resultId !== null) {
-    if (fetch.status === "ok")
-      return detailStatus(fetch.payload) === "processing" ? "processing" : "complete";
-    if (fetch.status === "not_found") return "unavailable";
-    return "processing"; // referenced but not fetched by the deadline
+  if (ref.resultId === null) return "unavailable";
+  if (fetch.status === "not_found") return "unavailable";
+  if (fetch.status !== "ok") return "processing"; // referenced but not fetched by the deadline
+  switch (detailStatus(fetch.payload)) {
+    case "processing":
+      return "processing";
+    case "complete":
+      return "complete";
+    case "failed":
+      return "job_failed";
+    default:
+      return "unavailable";
   }
-  return ref.exposed ? "unavailable" : "processing";
 }
 
 // --- Issue counters ---
@@ -531,22 +572,17 @@ function normalizeStructuredCheck<K extends CheckName>(
       : { details: adapter.empty(), dataGaps: undefined };
   const dataGaps = [...(interpreted.dataGaps ?? [])];
 
-  if (lifecycle === "unavailable" && ref.requested) {
-    dataGaps.push(
-      ref.resultId === null
-        ? {
-            code: "check_reference_missing",
-            product: PRODUCT,
-            message: `The ${name} check did not expose a result reference.`,
-            impact: `Detailed ${name} results cannot be retrieved for this test.`,
-          }
-        : {
-            code: "result_endpoint_unavailable",
-            product: PRODUCT,
-            message: `The ${name} result endpoint was unavailable.`,
-            impact: `Detailed ${name} results could not be retrieved and are not counted.`,
-          },
-    );
+  if (lifecycle === "unavailable") dataGaps.push(unavailableGap(name, ref, fetch));
+  if (lifecycle === "job_failed") {
+    const reason = ref.hasErrors
+      ? "reported errors when the job was started"
+      : `reported status '${rawDetailStatus(fetch.payload)}'`;
+    dataGaps.push({
+      code: "check_job_failed",
+      product: PRODUCT,
+      message: `The ${name} check job failed upstream; it ${reason}.`,
+      impact: `No ${name} findings exist for this test; its counts are placeholders, not a pass.`,
+    });
   }
 
   return {
@@ -557,6 +593,45 @@ function normalizeStructuredCheck<K extends CheckName>(
     } as CheckOutputByName[K],
     issues: lifecycle === "complete" ? adapter.issues(interpreted.details) : null,
     dataGaps,
+  };
+}
+
+// Why a requested check has no trustworthy result; the code tells the reader what to do next.
+function unavailableGap(name: CheckName, ref: CheckReference, fetch: CheckFetch): DataGap {
+  if (ref.resultId === null) {
+    const skippable = name === "link_validation" || name === "image_validation";
+    if (!ref.exposed && ref.requested === true && skippable) {
+      const subject = name === "link_validation" ? "links" : "images";
+      return {
+        code: "check_not_run",
+        product: PRODUCT,
+        message: `Inspect did not run ${name} for this test, which happens when the HTML contains no ${subject} to check.`,
+        impact: `There are no ${name} findings; confirm the HTML really has no ${subject} before treating this as a pass.`,
+      };
+    }
+    return {
+      code: "check_reference_missing",
+      product: PRODUCT,
+      message: `The ${name} check did not expose a result reference.`,
+      impact:
+        ref.requested === null
+          ? `Detailed ${name} results cannot be retrieved for this test; the check may not have been requested at create time, or Inspect may have had nothing to check.`
+          : `Detailed ${name} results cannot be retrieved for this test.`,
+    };
+  }
+  if (fetch.status === "ok") {
+    return {
+      code: "check_status_unrecognized",
+      product: PRODUCT,
+      message: `The ${name} result reported an unrecognized status '${rawDetailStatus(fetch.payload) ?? ""}'.`,
+      impact: `Detailed ${name} results were retrieved but cannot be trusted as final and are not counted.`,
+    };
+  }
+  return {
+    code: "result_endpoint_unavailable",
+    product: PRODUCT,
+    message: `The ${name} result endpoint was unavailable.`,
+    impact: `Detailed ${name} results could not be retrieved and are not counted.`,
   };
 }
 
@@ -696,7 +771,7 @@ export interface PollDeps {
 interface PollParams {
   testId: string;
   timeoutMs: number;
-  // Create-time selection distinguishes absent pending checks from unrequested checks.
+  // Create-time selection distinguishes an absent requested check from an unrequested one.
   requestedChecks?: ReadonlySet<CheckName>;
 }
 
@@ -714,19 +789,23 @@ function isNotFound(error: unknown): boolean {
   return status === 404;
 }
 
+function notFetched(): Record<CheckName, CheckFetch> {
+  return Object.fromEntries(CHECK_NAMES.map((name) => [name, { status: "not_fetched" }])) as Record<
+    CheckName,
+    CheckFetch
+  >;
+}
+
 // Fetch at most four referenced check results concurrently.
 async function fetchCheckResults(
   refs: Record<CheckName, CheckReference>,
   deps: PollDeps,
 ): Promise<Record<CheckName, CheckFetch>> {
-  const fetches = {} as Record<CheckName, CheckFetch>;
+  const fetches = notFetched();
   await Promise.all(
     CHECK_NAMES.map(async (name) => {
       const ref = refs[name];
-      if (!ref.requested || ref.hasErrors || ref.resultId === null) {
-        fetches[name] = { status: "not_fetched" };
-        return;
-      }
+      if (ref.requested === false || ref.hasErrors || ref.resultId === null) return;
       try {
         const payload = await deps.request("GET", checkResultPath(name, ref.resultId));
         fetches[name] = { status: "ok", payload };
@@ -749,20 +828,23 @@ async function pollEmailPreviewQa(params: PollParams, deps: PollDeps): Promise<P
   const deadline = deps.now() + params.timeoutMs;
   const statusPath = `/v2/preview/tests/${encodeURIComponent(params.testId)}`;
 
-  let render: unknown = await deps.request("GET", statusPath);
-  let refs = extractCheckResultIds(render, params.requestedChecks);
-  let fetches = await fetchCheckResults(refs, deps);
+  // Nothing is known until the first snapshot lands, so a deadline hit there reports processing.
+  let render: unknown = null;
+  let refs = unobservedCheckReferences(params.requestedChecks);
+  let fetches = notFetched();
   let timedOut = false;
 
   const allChecksTerminal = (): boolean =>
     CHECK_NAMES.every((name) => isCheckTerminal(refs[name], fetches[name]));
 
-  while (!allChecksTerminal()) {
-    if (deps.now() + POLL_INTERVAL_MS > deadline) {
-      timedOut = true;
-      break;
+  for (let attempt = 0; ; attempt += 1) {
+    if (attempt > 0) {
+      if (deps.now() + POLL_INTERVAL_MS > deadline) {
+        timedOut = true;
+        break;
+      }
+      await deps.sleep(POLL_INTERVAL_MS);
     }
-    await deps.sleep(POLL_INTERVAL_MS);
     try {
       // Commit only complete snapshots so a deadline abort keeps the previous one.
       const nextRender = await deps.request("GET", statusPath);
@@ -775,6 +857,7 @@ async function pollEmailPreviewQa(params: PollParams, deps: PollDeps): Promise<P
       timedOut = true;
       break;
     }
+    if (allChecksTerminal()) break;
   }
 
   return { render, refs, fetches, timedOut };

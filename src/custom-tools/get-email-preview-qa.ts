@@ -17,7 +17,7 @@ import {
   timeoutSecondsSchema,
 } from "./email-preview-qa-runtime.js";
 
-// Resume lacks create-time check/client provenance, so absent checks stay pending.
+// Resume lacks create-time provenance, so an absent check reports unavailable with a hedged gap.
 
 export interface GetEmailPreviewQaParams {
   testId: string;
