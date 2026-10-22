@@ -1,0 +1,6 @@
+{
+  "useTabs": false,
+  "tabWidth": 2,
+  "printWidth": 100,
+  "ignorePatterns": ["test/fixtures/email-preview-qa-contract.ts"]
+}

@@ -151,10 +151,53 @@ export const endpoints: readonly EndpointEntry[] = [
     tags: ["optimize"],
   },
 
-  // Email Preview (Inspect)
+  // Email Preview (Inspect); retain V1 aggregate results for compatibility.
   {
     endpoint: "GET /v1/preview/tests/{test_id}/results",
     toolName: "get_preview_result",
+    tags: ["inspect"],
+  },
+  // Creation is intentionally not a primitive; it is exposed only via run_email_preview_qa.
+  {
+    endpoint: "GET /v2/preview/tests",
+    toolName: "list_preview_tests",
+    tags: ["inspect"],
+  },
+  {
+    endpoint: "GET /v2/preview/tests/{test_id}",
+    toolName: "get_preview_test_status",
+    tags: ["inspect"],
+  },
+  {
+    endpoint: "GET /v2/preview/tests/{test_id}/results/{client_id}",
+    toolName: "get_preview_client_result",
+    tags: ["inspect"],
+  },
+  // Client catalog is V1 (no V2 catalog).
+  {
+    endpoint: "GET /v1/preview/tests/clients",
+    toolName: "list_preview_clients",
+    tags: ["inspect"],
+  },
+  // Structured-check detail results; large payloads that may contain email content.
+  {
+    endpoint: "GET /v1/inspect/links/{id}",
+    toolName: "get_link_validation_result",
+    tags: ["inspect"],
+  },
+  {
+    endpoint: "GET /v1/inspect/images/{id}",
+    toolName: "get_image_validation_result",
+    tags: ["inspect"],
+  },
+  {
+    endpoint: "GET /v1/inspect/accessibility/{id}",
+    toolName: "get_accessibility_result",
+    tags: ["inspect"],
+  },
+  {
+    endpoint: "GET /v1/inspect/analyze/{result_id}",
+    toolName: "get_code_analysis_result",
     tags: ["inspect"],
   },
 ] as const;
