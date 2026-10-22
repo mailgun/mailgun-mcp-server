@@ -12,7 +12,7 @@ export const CLIENT_IDS = {
   lotus: 'lotus_notes'
 } as const;
 
-// Check references expose an id, errors, or null when not requested.
+// Check references expose an id, errors, null when not requested, or no key when there was nothing to check.
 
 const CHECK_REFS_ALL = {
   link_validation: { items: { id: 'link_001', links: { self: '/v1/inspect/links/link_001' } } },
@@ -383,7 +383,7 @@ export const POLL_DEADLINE_REACHED = {
   expected_data_gap_code: 'workflow_timed_out'
 } as const;
 
-// 17. Ambiguous creation requires reconciliation by reference id; never re-POST.
+// 17. Ambiguous creation reconciles by subject and create-time window; never re-POST.
 export const AMBIGUOUS_CREATE_TRANSPORT_FAILURE = {
   scenario: 'ambiguous_create_transport_failure',
   reference_id: 'lovable-build-123',

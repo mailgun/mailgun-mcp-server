@@ -13,6 +13,7 @@ import {
   CODE_ANALYSIS_RESULT,
   IMAGE_RESULT,
   LINK_RESULT,
+  RENDER_CHECK_LIFECYCLE,
   RENDER_CHECK_REFERENCE_MISSING,
   RENDER_COMPLETE,
   RENDER_EMPTY,
@@ -197,6 +198,119 @@ describe("collectEmailPreviewQa", () => {
     expect(output.data_gaps).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "check_reference_missing" })]),
     );
+  });
+
+  test("a resume cannot tell an omitted check from an unrequested one and says so", async () => {
+    // No requestedChecks: accessibility is omitted rather than null.
+    const contentChecking: Record<string, unknown> = { ...RENDER_COMPLETE.content_checking };
+    delete contentChecking.accessibility;
+    const { deps, requests } = fakeDeps({
+      [STATUS_PATH]: { ...RENDER_COMPLETE, content_checking: contentChecking },
+      ...RESULT_ROUTES,
+    });
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 30_000 },
+      deps,
+    );
+
+    expect(output.timed_out).toBe(false);
+    expect(output.checks.accessibility.status).toBe("unavailable");
+    expect(output.data_gaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "check_reference_missing",
+          impact: expect.stringContaining("may not have been requested"),
+        }),
+      ]),
+    );
+    expect(requests.filter((request) => request === `GET ${STATUS_PATH}`)).toHaveLength(1);
+  });
+
+  test.each([
+    ["Failed", "meta.status Failed"],
+    ["Error", "meta.status Error"],
+    ["FAILED", "uppercase status"],
+  ])("a detail status of %s is a failed job with a gap, never a pass", async (status) => {
+    const failed = { ...LINK_RESULT, meta: { status } };
+    const { deps } = fakeDeps({
+      [STATUS_PATH]: RENDER_COMPLETE,
+      ...RESULT_ROUTES,
+      "/v1/inspect/links/link_001": failed,
+    });
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 30_000 },
+      deps,
+    );
+
+    expect(output.timed_out).toBe(false);
+    expect(output.checks.link_validation).toMatchObject({ status: "job_failed", failures: 0 });
+    expect(output.issue_counts.by_check.link_validation).toBeUndefined();
+    expect(output.data_gaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "check_job_failed",
+          message: expect.stringContaining(`'${status}'`),
+        }),
+      ]),
+    );
+  });
+
+  test("a create-time job error reports a failed-job gap", async () => {
+    const { deps } = fakeDeps({ [STATUS_PATH]: RENDER_CHECK_LIFECYCLE, ...RESULT_ROUTES });
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 30_000 },
+      deps,
+    );
+
+    expect(output.checks.image_validation.status).toBe("job_failed");
+    expect(output.data_gaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "check_job_failed",
+          message: expect.stringContaining("when the job was started"),
+        }),
+      ]),
+    );
+  });
+
+  test.each([
+    ["an unrecognized status", { status: "Queued" }],
+    ["a missing status", {}],
+  ])("%s is unavailable rather than complete", async (_label, meta) => {
+    const { deps } = fakeDeps({
+      [STATUS_PATH]: RENDER_COMPLETE,
+      ...RESULT_ROUTES,
+      "/v1/inspect/analyze/code_001": { ...CODE_ANALYSIS_RESULT, meta },
+    });
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 30_000 },
+      deps,
+    );
+
+    expect(output.timed_out).toBe(false);
+    expect(output.checks.code_analysis).toMatchObject({ status: "unavailable", count: 0 });
+    expect(output.data_gaps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "check_status_unrecognized" })]),
+    );
+  });
+
+  test("a deadline hit on the first status read reports processing checks, not an error", async () => {
+    const { deps } = fakeDeps({
+      [STATUS_PATH]: () => {
+        throw new WorkflowDeadlineError();
+      },
+    });
+    const output = await collectEmailPreviewQa(
+      { testId: "preview_test_001", timeoutMs: 30_000, requestedChecks: new Set(CHECK_NAMES) },
+      deps,
+    );
+
+    expect(output.timed_out).toBe(true);
+    expect(output.status).toBe("unknown");
+    for (const name of CHECK_NAMES) expect(output.checks[name].status).toBe("processing");
+    const gapCodes = output.data_gaps.map(({ code }) => code);
+    expect(gapCodes).toContain("workflow_timed_out");
+    expect(gapCodes).not.toContain("check_reference_missing");
   });
 
   test("polls a processing detail until the check completes", async () => {
