@@ -27,6 +27,11 @@ export async function main(): Promise<void> {
       process.exit(1);
     }
 
+    if (cli.error) {
+      console.error(cli.error);
+      process.exit(1);
+    }
+
     if (!MAILGUN_API_KEY) {
       console.error(
         "Error: MAILGUN_API_KEY environment variable is required. Set it in your MCP client configuration.",

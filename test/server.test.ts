@@ -114,6 +114,7 @@ describe("dynamic mode", () => {
     const writes = tools.filter((tool) => tool.annotations?.readOnlyHint === false);
     expect(writes.map((tool) => tool.name)).toEqual([
       "post-v3-domain-messages",
+      "put-v4-domains-name-verify",
       "mailgun_enable_toolset",
     ]);
     expect(tools.find((tool) => tool.name === "mailgun_enable_toolset")!.annotations).toEqual({

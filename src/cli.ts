@@ -12,6 +12,7 @@ export interface CliResult {
   showHelp: boolean;
   listTags: boolean;
   invalid: string[];
+  error?: string;
 }
 
 const TAGS_ENV_VAR = "MAILGUN_MCP_TAGS";
@@ -79,6 +80,16 @@ export function resolveActiveTags(argv: readonly string[], env: NodeJS.ProcessEn
   // Treat the same as an empty value.
   if (tags.length === 0) {
     return { activeTags: "all", showHelp, listTags, invalid: [] };
+  }
+
+  if (tags.includes("dynamic") && tags.length > 1) {
+    return {
+      activeTags: "all",
+      showHelp,
+      listTags,
+      invalid: [],
+      error: `"dynamic" can't be combined with other --tags / ${TAGS_ENV_VAR} values (got "${tags.join(",")}"). Use dynamic on its own, or list only the tags or toolsets to load.`,
+    };
   }
 
   if (tags.includes("all")) {

@@ -238,7 +238,7 @@ Setting `--tags` or `MAILGUN_MCP_TAGS` to anything other than `dynamic` loads ex
 Valid values (run `--list-tags` for descriptions):
 
 - `all` — every tool (the default)
-- `dynamic` — the core tools, with other toolsets loaded [on demand](#on-demand-toolsets)
+- `dynamic` — the core tools, with other toolsets loaded [on demand](#on-demand-toolsets). Use it on its own; combining it with other values fails at startup.
 - `core` — only the core tools listed above
 - `send`, `validate`, `optimize`, `inspect` — every tool for that product (`send` covers every `send.<group>` toolset)
 - A toolset ID such as `send.templates`

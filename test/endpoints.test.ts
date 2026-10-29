@@ -181,7 +181,6 @@ describe("readOnly classification", () => {
       .filter((e) => e.method !== "GET" && e.readOnly)
       .map(({ method, path }) => `${method} ${path}`);
     expect(readOnlyNonGets).toEqual([
-      "PUT /v4/domains/{name}/verify",
       "POST /v1/analytics/metrics",
       "POST /v1/analytics/usage/metrics",
       "POST /v1/analytics/logs",
@@ -190,7 +189,7 @@ describe("readOnly classification", () => {
   });
 
   test("every other POST/PUT endpoint is a write", () => {
-    expect(parsed.filter((e) => !e.readOnly)).toHaveLength(16);
+    expect(parsed.filter((e) => !e.readOnly)).toHaveLength(17);
   });
 });
 

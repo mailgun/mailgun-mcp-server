@@ -123,9 +123,17 @@ describe("resolveActiveTags()", () => {
     expect(resolveActiveTags([], { MAILGUN_MCP_TAGS: "dynamic" }).activeTags).toBe("dynamic");
   });
 
-  test("all wins over dynamic, and dynamic wins over other values", () => {
-    expect(resolveActiveTags(["--tags", "dynamic,all"], {}).activeTags).toBe("all");
-    expect(resolveActiveTags(["--tags", "dynamic,send.templates"], {}).activeTags).toBe("dynamic");
+  test("dynamic combined with other values is an error", () => {
+    const results = [
+      resolveActiveTags(["--tags", "dynamic,all"], {}),
+      resolveActiveTags(["--tags", "send.templates,dynamic"], {}),
+      resolveActiveTags([], { MAILGUN_MCP_TAGS: "dynamic,validate" }),
+    ];
+    for (const result of results) {
+      expect(result.error).toMatch(/"dynamic" can't be combined/);
+    }
+    expect(results[2].error).toContain('"dynamic,validate"');
+    expect(resolveActiveTags(["--tags", "dynamic"], {}).error).toBeUndefined();
   });
 
   test("accepts toolset IDs and core", () => {

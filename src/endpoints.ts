@@ -63,7 +63,7 @@ export const endpointGroups: Readonly<Record<ToolsetId, readonly EndpointEntry[]
     // Domains
     { endpoint: "GET /v4/domains", core: true },
     { endpoint: "GET /v4/domains/{name}", core: true },
-    { endpoint: "PUT /v4/domains/{name}/verify", core: true, readOnly: true },
+    { endpoint: "PUT /v4/domains/{name}/verify", core: true },
     "GET /v3/domains/{name}/sending_queues",
 
     // Domain Tracking
