@@ -135,7 +135,6 @@ export const endpoints: readonly EndpointEntry[] = [
   "PUT /v3/{domain_name}/templates/{template_name}/versions/{version_name}",
 
   // Bounce Classification
-  "GET /v1/bounce-classification/stats",
   "POST /v2/bounce-classification/metrics",
 
   // Account Limits
