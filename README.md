@@ -225,8 +225,8 @@ Every tool belongs to a toolset. The model loads the rest of a toolset when a ta
 
 The model loads toolsets with three extra tools:
 
-- **`mailgun_list_toolsets`** lists every toolset and its tools, marking which are loaded and which change data.
-- **`mailgun_enable_toolset`** loads one or more toolsets. The server then notifies the client that its tool list changed (`notifications/tools/list_changed`), and the new tools appear alongside the core ones. The response also includes each new tool's input schema.
+- **`mailgun_list_toolsets`** lists every toolset and its tools, marking which are loaded and which change data. Given a tool name, it returns that tool's input schema instead.
+- **`mailgun_enable_toolset`** loads one or more toolsets. The server then notifies the client that its tool list changed (`notifications/tools/list_changed`), and the new tools appear alongside the core ones. The response lists the new tools without their input schemas, which come with the updated tool list.
 - **`mailgun_call_tool`** runs a read-only tool by name, whether or not its toolset is loaded. It's a fallback for clients that don't refresh their tool list after a change. It refuses core tools and tools that change data, so those always run as their own tool call.
 
 Loaded toolsets last until the client disconnects. On-demand loading needs a client that refreshes its tool list when the server reports a change; Claude Code does. In clients that don't, newly loaded tools won't appear: read-only tools still work through `mailgun_call_tool`, and tools that change data need the default (all tools) or [`--tags`](#tag-filtering), for example `--tags core,send.templates`.

@@ -149,6 +149,30 @@ describe("mailgun_list_toolsets", () => {
     const output = text(await call("mailgun_list_toolsets"));
     expect(output).toContain("  * get-v3-routes: Get all routes");
   });
+
+  test("returns a tool's input schema when given its name", async () => {
+    const details = (name: string) =>
+      call("mailgun_list_toolsets", { tool: name }).then((result) => JSON.parse(text(result)));
+    const getTemplate = await details("get-v3-domain-templates-template");
+    const createTemplate = await details("post-v3-domain-templates");
+    await call("mailgun_enable_toolset", { toolsets: ["send.templates"] });
+    const listed = (await client.listTools()).tools.find(
+      (tool) => tool.name === "get-v3-domain-templates-template",
+    )!;
+
+    expect(getTemplate).toEqual({
+      name: "get-v3-domain-templates-template",
+      description: listed.description,
+      inputSchema: listed.inputSchema,
+    });
+    expect(createTemplate.write).toBe(true);
+  });
+
+  test("rejects an unknown tool name", async () => {
+    const result = await call("mailgun_list_toolsets", { tool: "nope" });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toMatch(/Unknown tool "nope"/);
+  });
 });
 
 describe("mailgun_enable_toolset", () => {
@@ -165,23 +189,15 @@ describe("mailgun_enable_toolset", () => {
     );
   });
 
-  test("returns the newly loaded tools with their input schemas", async () => {
+  test("lists the newly loaded tools without their input schemas", async () => {
     const output = text(await call("mailgun_enable_toolset", { toolsets: ["send.templates"] }));
-    const tools = JSON.parse(output.slice(output.indexOf("\n\n") + 2)) as {
-      name: string;
-      write?: boolean;
-      inputSchema: unknown;
-    }[];
-    const listed = (await client.listTools()).tools;
+    const tools = output.split("\n").filter((line) => line.startsWith("- "));
 
     expect(output).toMatch(/^Loaded 7 tools from send\.templates\./);
-    expect(tools.map((tool) => tool.name)).not.toContain("get-v3-domain-templates");
-    const getTemplate = tools.find((tool) => tool.name === "get-v3-domain-templates-template")!;
-    expect(getTemplate.write).toBeUndefined();
-    expect(getTemplate.inputSchema).toEqual(
-      listed.find((tool) => tool.name === "get-v3-domain-templates-template")!.inputSchema,
-    );
-    expect(tools.find((tool) => tool.name === "post-v3-domain-templates")!.write).toBe(true);
+    expect(tools).toHaveLength(7);
+    expect(tools).toContain("- post-v3-domain-templates [write]: Create a template");
+    expect(tools.some((line) => line.startsWith("- get-v3-domain-templates:"))).toBe(false);
+    expect(output).not.toContain("inputSchema");
   });
 
   test("uses the singular when one tool is loaded", async () => {
@@ -266,7 +282,9 @@ describe("mailgun_call_tool", () => {
     });
     expect(result.isError).toBe(true);
     expect(text(result)).toContain("Invalid arguments for get-v3-domains-domain-webhooks");
-    expect(text(result)).toContain('mailgun_enable_toolset with "send.webhooks"');
+    expect(text(result)).toContain(
+      'mailgun_list_toolsets with tool "get-v3-domains-domain-webhooks"',
+    );
     expect(makeMailgunRequest).not.toHaveBeenCalled();
   });
 });

@@ -135,6 +135,8 @@ function inputJsonSchema(handle: RegisteredTool): unknown {
     : { type: "object", properties: {} };
 }
 
+// Names and summaries only: clients that refresh their tool list get the schemas from it,
+// so returning them here too would put them in the model's context twice.
 function enableResult(toolsets: readonly ToolsetId[], loaded: readonly LoadedTool[]): string {
   if (loaded.length === 0) {
     return `Nothing new to load: ${toolsets.join(", ")} already loaded.`;
@@ -142,7 +144,7 @@ function enableResult(toolsets: readonly ToolsetId[], loaded: readonly LoadedToo
   const plural = loaded.length === 1 ? "tool" : "tools";
   const lines = [
     `Loaded ${loaded.length} ${plural} from ${toolsets.join(", ")}. They should now appear in your tool list.`,
-    `If they don't, run the read-only ones with ${CALL_TOOL}.`,
+    `If they don't, run the read-only ones with ${CALL_TOOL}, after getting each one's input schema from ${LIST_TOOLSETS}.`,
   ];
   const writeToolsets = [...new Set(loaded.filter((t) => !t.readOnly).map((t) => t.toolset))];
   for (const toolset of writeToolsets) {
@@ -150,13 +152,30 @@ function enableResult(toolsets: readonly ToolsetId[], loaded: readonly LoadedToo
       `Tools marked [write] in ${toolset} can only be called directly; if they don't appear, ${configHint(toolset)}.`,
     );
   }
-  const tools = loaded.map((tool) => ({
-    name: tool.name,
-    ...(!tool.readOnly && { write: true }),
-    description: tool.description,
-    inputSchema: inputJsonSchema(tool.handle),
-  }));
-  return `${lines.join("\n")}\n\n${JSON.stringify(tools)}`;
+  lines.push("");
+  for (const tool of loaded) {
+    const write = tool.readOnly ? "" : " [write]";
+    lines.push(`- ${tool.name}${write}: ${firstSentence(tool.description)}`);
+  }
+  return lines.join("\n");
+}
+
+function toolDetails(loader: ToolLoader, name: string): CallToolResult {
+  const tool = loader.get(name);
+  if (!tool) {
+    return textResult(
+      `Unknown tool "${name}". Call ${LIST_TOOLSETS} without a tool name to see tool names.`,
+      true,
+    );
+  }
+  return textResult(
+    JSON.stringify({
+      name: tool.name,
+      ...(!tool.readOnly && { write: true }),
+      description: tool.description,
+      inputSchema: inputJsonSchema(tool.handle),
+    }),
+  );
 }
 
 async function callTool(
@@ -189,7 +208,7 @@ async function callTool(
   if (!parsed.success) {
     return textResult(
       `Invalid arguments for ${name}: ${parsed.error.message}. ` +
-        `Call ${ENABLE_TOOLSET} with "${tool.toolset}" to get its input schema.`,
+        `Call ${LIST_TOOLSETS} with tool "${name}" to get its input schema.`,
       true,
     );
   }
@@ -202,10 +221,18 @@ export function registerMetaTools(server: McpServer, loader: ToolLoader): void {
     {
       description:
         "List the Mailgun toolsets and every tool in them, including tools that aren't loaded yet. " +
-        "Use this when a task needs a Mailgun capability you don't see in your tools.",
+        "Use this when a task needs a Mailgun capability you don't see in your tools. " +
+        "Pass a tool name to get that tool's input schema instead.",
+      inputSchema: {
+        tool: z
+          .string()
+          .optional()
+          .describe("Tool name, for example get-v3-domain-templates-template."),
+      },
       annotations: { readOnlyHint: true },
     },
-    () => textResult(formatToolsetSummary(loader.summary())),
+    ({ tool }) =>
+      tool ? toolDetails(loader, tool) : textResult(formatToolsetSummary(loader.summary())),
   );
 
   const catalog = TOOLSET_IDS.map((id) => `- ${id}: ${TOOLSETS[id]}`).join("\n");
@@ -214,7 +241,7 @@ export function registerMetaTools(server: McpServer, loader: ToolLoader): void {
     {
       description:
         "Load more Mailgun tools. Only a small core set is loaded at startup; the rest are grouped " +
-        `into these toolsets:\n${catalog}\nReturns the loaded tools with their input schemas. ` +
+        `into these toolsets:\n${catalog}\nReturns the names of the loaded tools. ` +
         `Call ${LIST_TOOLSETS} to see the tools in each toolset.`,
       inputSchema: {
         toolsets: z
@@ -233,7 +260,7 @@ export function registerMetaTools(server: McpServer, loader: ToolLoader): void {
       description:
         "Run a read-only Mailgun tool by name, whether or not its toolset is loaded. Use it only " +
         "for tools that aren't in your tool list; otherwise call the tool directly. " +
-        `${ENABLE_TOOLSET} returns each tool's input schema. Core tools and tools that change ` +
+        `${LIST_TOOLSETS} returns each tool's input schema. Core tools and tools that change ` +
         "data can't be run this way.",
       inputSchema: {
         name: z.string().describe("Tool name, for example get-v3-domain-templates-template."),
