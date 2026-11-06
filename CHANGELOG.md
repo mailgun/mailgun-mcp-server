@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0
+
+### Removed
+
+- Removed all deprecated `GET /v1/bounce-classification/...` endpoints. 
+  Use the `POST /v2/bounce-classification/metrics` endpoint instead.
+
 ## 2.1.0
 
 ### Added
