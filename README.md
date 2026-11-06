@@ -214,7 +214,7 @@ Every tool belongs to a toolset. The model loads the rest of a toolset when a ta
 | `send.webhooks`     | 4     | Domain webhooks                                                          |
 | `send.account`      | 8     | Account IPs, dedicated IP pools, custom sending limits                   |
 | `send.message_tags` | 8     | Message tags, stats by tag, tag limits                                   |
-| `send.analytics`    | 13    | Stats and aggregates, analytics metrics and logs, bounce classification  |
+| `send.analytics`    | 12    | Stats and aggregates, analytics metrics and logs, bounce classification  |
 | `send.suppressions` | 8     | Bounces, unsubscribes, complaints, allowlist                             |
 | `send.routes`       | 3     | Inbound routes                                                           |
 | `send.lists`        | 8     | Mailing lists and members                                                |

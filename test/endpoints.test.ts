@@ -127,8 +127,8 @@ describe("endpoint validation against OpenAPI spec", () => {
 });
 
 describe("toolset grouping", () => {
-  test("covers all 73 endpoints", () => {
-    expect(endpoints).toHaveLength(73);
+  test("covers all 72 endpoints", () => {
+    expect(endpoints).toHaveLength(72);
   });
 
   test("every toolset has at least one endpoint", () => {

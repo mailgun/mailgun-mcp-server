@@ -291,8 +291,8 @@ describe("mailgun_call_tool", () => {
 
 describe("static modes", () => {
   test.each<[string, ActiveTags, number]>([
-    ["all", "all", 74],
-    ["send", new Set(["send"]), 71],
+    ["all", "all", 73],
+    ["send", new Set(["send"]), 70],
     ["core", new Set(["core"]), 15],
     ["send.templates", new Set(["send.templates"]), 8],
     ["validate,inspect", new Set(["validate", "inspect"]), 2],

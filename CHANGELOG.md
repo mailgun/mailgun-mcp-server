@@ -5,8 +5,8 @@
 ### Added
 
 - **Opt-in on-demand loading.** `--tags dynamic` (or `MAILGUN_MCP_TAGS=dynamic`) starts
-  the server with 15 core tools plus 3 "tool-loading" tools instead of all 74, about
-  29 KB of tool definitions instead of about 69 KB. The model calls
+  the server with 15 core tools plus 3 "tool-loading" tools instead of all 73, about
+  29 KB of tool definitions instead of about 68 KB. The model calls
   `mailgun_list_toolsets` and `mailgun_enable_toolset` to load more tools, and the
   server sends `notifications/tools/list_changed` when it does. `mailgun_call_tool` runs
   read-only tools by name, whether or not their toolset is loaded, for clients that

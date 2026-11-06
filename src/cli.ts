@@ -134,6 +134,7 @@ export function formatHelp(): string {
     `                     Tags: ${tagList}.`,
     "                     Also: send.<group> toolsets, core, all, and dynamic (see --list-tags).",
     "                     dynamic: start with core tools; the model loads more on demand.",
+    "                     Use dynamic on its own; it can't be combined with other tag values.",
     "  --list-tags        Print valid --tags values with descriptions and exit",
     "  --help, -h         Show this help and exit",
     "",
