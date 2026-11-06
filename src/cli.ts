@@ -1,10 +1,18 @@
-import { type ActiveTags, KNOWN_TAGS, parseTagList } from "./tags.js";
+import {
+  type ActiveTags,
+  KNOWN_TAG_SELECTORS,
+  KNOWN_TAGS,
+  parseTagList,
+  TOOLSET_IDS,
+  TOOLSETS,
+} from "./tags.js";
 
 export interface CliResult {
   activeTags: ActiveTags;
   showHelp: boolean;
   listTags: boolean;
   invalid: string[];
+  error?: string;
 }
 
 const TAGS_ENV_VAR = "MAILGUN_MCP_TAGS";
@@ -74,6 +82,24 @@ export function resolveActiveTags(argv: readonly string[], env: NodeJS.ProcessEn
     return { activeTags: "all", showHelp, listTags, invalid: [] };
   }
 
+  if (tags.includes("dynamic") && tags.length > 1) {
+    return {
+      activeTags: "all",
+      showHelp,
+      listTags,
+      invalid: [],
+      error: `"dynamic" can't be combined with other --tags / ${TAGS_ENV_VAR} values (got "${tags.join(",")}"). Use dynamic on its own, or list only the tags or toolsets to load.`,
+    };
+  }
+
+  if (tags.includes("all")) {
+    return { activeTags: "all", showHelp, listTags, invalid: [] };
+  }
+
+  if (tags.includes("dynamic")) {
+    return { activeTags: "dynamic", showHelp, listTags, invalid: [] };
+  }
+
   return {
     activeTags: new Set(tags),
     showHelp,
@@ -83,7 +109,19 @@ export function resolveActiveTags(argv: readonly string[], env: NodeJS.ProcessEn
 }
 
 export function formatTagList(): string {
-  return KNOWN_TAGS.join("\n");
+  const toolsetIds: readonly string[] = TOOLSET_IDS;
+  const rows: [string, string][] = [
+    ["all", "Every tool, loaded at startup (default)"],
+    ["dynamic", "Core tools at startup; the model loads other toolsets on demand"],
+    ["core", "Only the core tools"],
+    ...KNOWN_TAGS.filter((tag) => !toolsetIds.includes(tag)).map((tag): [string, string] => [
+      tag,
+      `Every ${tag}.* toolset`,
+    ]),
+    ...TOOLSET_IDS.map((id): [string, string] => [id, TOOLSETS[id]]),
+  ];
+  const width = Math.max(...rows.map(([name]) => name.length)) + 2;
+  return rows.map(([name, description]) => `${name.padEnd(width)}${description}`).join("\n");
 }
 
 export function formatHelp(): string {
@@ -92,9 +130,12 @@ export function formatHelp(): string {
     "Usage: mailgun-mcp-server [options]",
     "",
     "Options:",
-    `  --tags <list>      Comma-separated product tags to enable (default: all).`,
-    `                     Valid: ${tagList}`,
-    "  --list-tags        Print valid tag values and exit",
+    "  --tags <list>      Comma-separated tags or toolsets to load (default: all).",
+    `                     Tags: ${tagList}.`,
+    "                     Also: send.<group> toolsets, core, all, and dynamic (see --list-tags).",
+    "                     dynamic: start with core tools; the model loads more on demand.",
+    "                     Use dynamic on its own; it can't be combined with other tag values.",
+    "  --list-tags        Print valid --tags values with descriptions and exit",
     "  --help, -h         Show this help and exit",
     "",
     "Environment:",
@@ -105,12 +146,14 @@ export function formatHelp(): string {
     "",
     "Examples:",
     "  MAILGUN_API_KEY=... mailgun-mcp-server",
+    "  MAILGUN_API_KEY=... mailgun-mcp-server --tags dynamic",
     "  MAILGUN_API_KEY=... mailgun-mcp-server --tags validate,inspect",
+    "  MAILGUN_API_KEY=... mailgun-mcp-server --tags core,send.templates",
   ].join("\n");
 }
 
 export function formatInvalidTagsMessage(invalid: readonly string[]): string {
-  const list = KNOWN_TAGS.join(", ");
+  const list = KNOWN_TAG_SELECTORS.join(", ");
   const plural = invalid.length === 1 ? "tag" : "tags";
-  return `Unknown ${plural}: ${invalid.join(", ")}. Valid tags: ${list}.`;
+  return `Unknown ${plural}: ${invalid.join(", ")}. Valid values: ${list}. Run with --list-tags for descriptions.`;
 }

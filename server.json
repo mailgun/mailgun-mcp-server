@@ -3,12 +3,12 @@
   "name": "com.mailgun/mailgun-mcp-server",
   "title": "Mailgun MCP Server",
   "description": "An MCP server for sending email, investigating deliverability, and managing Mailgun accounts.",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@mailgun/mcp-server",
-      "version": "2.2.0",
+      "version": "2.3.0",
       "runtimeHint": "npx",
       "runtimeArguments": [
         {
@@ -28,6 +28,11 @@
           "description": "API region: us or eu",
           "isRequired": false,
           "default": "us"
+        },
+        {
+          "name": "MAILGUN_MCP_TAGS",
+          "description": "Comma-separated tags or toolsets to load instead of all tools, or dynamic to start with core tools and load the rest on demand.",
+          "isRequired": false
         }
       ],
       "transport": {

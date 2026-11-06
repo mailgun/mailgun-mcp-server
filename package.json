@@ -1,6 +1,6 @@
 {
   "name": "@mailgun/mcp-server",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "An MCP server that gives AI agents a practical interface to Mailgun workflows for sending, diagnosing deliverability, and taking account actions safely.",
   "keywords": [
     "ai",
@@ -41,7 +41,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.7.0",
+    "@modelcontextprotocol/sdk": "^1.24.0",
     "js-yaml": "^4.1.0",
     "zod": "^4.3.6"
   },
