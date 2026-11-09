@@ -1,6 +1,7 @@
 import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { MailgunConfig } from "../config.js";
 import { type ActiveTags, shouldRegister, type ToolClassification } from "../tags.js";
-import type { ToolLoader } from "../toolsets.js";
+import type { ToolDefinition } from "../tools.js";
 import {
   TOOL_NAME as GET_METRICS_SUMMARY,
   register as registerGetMetricsSummary,
@@ -8,7 +9,11 @@ import {
 
 interface CustomToolManifestEntry extends ToolClassification {
   name: string;
-  register: (server: McpServer, classification: ToolClassification) => RegisteredTool;
+  register: (
+    server: McpServer,
+    config: MailgunConfig,
+    classification: ToolClassification,
+  ) => RegisteredTool;
 }
 
 const customTools: readonly CustomToolManifestEntry[] = [
@@ -22,14 +27,15 @@ const customTools: readonly CustomToolManifestEntry[] = [
   },
 ];
 
-export function registerCustomTools(
-  server: McpServer,
-  activeTags: ActiveTags,
-  loader?: ToolLoader,
-): void {
+export function buildCustomTools(activeTags: ActiveTags): ToolDefinition[] {
+  const tools: ToolDefinition[] = [];
   for (const { name, register, ...classification } of customTools) {
     if (!shouldRegister(activeTags, classification)) continue;
-    const handle = register(server, classification);
-    loader?.add({ name, description: handle.description ?? "", ...classification, handle });
+    tools.push({
+      name,
+      ...classification,
+      register: (server, config) => register(server, config, classification),
+    });
   }
+  return tools;
 }

@@ -6,8 +6,9 @@ import {
   ToolListChangedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { makeMailgunRequest } from "../src/api.js";
+import type { MailgunConfig } from "../src/config.js";
 import { loadOpenApiSpec } from "../src/openapi.js";
-import { createMailgunServer, registerMailgunTools } from "../src/server.js";
+import { buildToolCatalog, createMailgunServer, type ToolCatalog } from "../src/server.js";
 import type { ActiveTags } from "../src/tags.js";
 import { toolsetHint } from "../src/toolsets.js";
 
@@ -50,28 +51,42 @@ const TEMPLATE_TOOLS = [
 // Serialized tools/list budget for dynamic mode, so the footprint can't silently grow back.
 const DYNAMIC_MODE_BYTE_BUDGET = 31_000;
 
+const mailgunConfig: MailgunConfig = { apiKey: "key-test", hostname: "api.mailgun.net" };
+
 let client: Client;
 let listChangedCount: number;
+const openClients: Client[] = [];
+
+async function connectClient(catalog: ToolCatalog, config: MailgunConfig): Promise<Client> {
+  const newClient = new Client({ name: "test-client", version: "0.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([
+    newClient.connect(clientTransport),
+    createMailgunServer(catalog, config).connect(serverTransport),
+  ]);
+  openClients.push(newClient);
+  return newClient;
+}
 
 async function connect(activeTags: ActiveTags): Promise<void> {
-  const server = createMailgunServer();
-  registerMailgunTools(server, openApiSpec, activeTags);
-  client = new Client({ name: "test-client", version: "0.0.0" });
+  client = await connectClient(buildToolCatalog(openApiSpec, activeTags), mailgunConfig);
   listChangedCount = 0;
   client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
     listChangedCount += 1;
   });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
 }
 
-async function toolNames(): Promise<string[]> {
-  const { tools } = await client.listTools();
+async function toolNames(on: Client = client): Promise<string[]> {
+  const { tools } = await on.listTools();
   return tools.map((tool) => tool.name).toSorted();
 }
 
-async function call(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
-  return (await client.callTool({ name, arguments: args })) as CallToolResult;
+async function call(
+  name: string,
+  args: Record<string, unknown> = {},
+  on: Client = client,
+): Promise<CallToolResult> {
+  return (await on.callTool({ name, arguments: args })) as CallToolResult;
 }
 
 const text = (result: CallToolResult): string =>
@@ -85,7 +100,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  await client.close();
+  await Promise.all(openClients.splice(0).map((openClient) => openClient.close()));
 });
 
 describe("dynamic mode", () => {
@@ -241,6 +256,7 @@ describe("mailgun_call_tool", () => {
     expect(result.isError).toBeUndefined();
     expect(text(result)).toContain("GET /v3/domains/example.com/webhooks completed successfully");
     expect(makeMailgunRequest).toHaveBeenCalledWith(
+      mailgunConfig,
       "GET",
       "/v3/domains/example.com/webhooks",
       null,
@@ -255,6 +271,7 @@ describe("mailgun_call_tool", () => {
     });
     expect(result.isError).toBeUndefined();
     expect(makeMailgunRequest).toHaveBeenCalledWith(
+      mailgunConfig,
       "POST",
       "/v1/analytics/usage/metrics",
       {},
@@ -304,6 +321,61 @@ describe("static modes", () => {
     expect(tools.filter((tool) => tool.name.startsWith("mailgun_"))).toEqual([]);
     expect(tools.filter((tool) => tool.description?.includes("mailgun_enable_toolset"))).toEqual(
       [],
+    );
+  });
+});
+
+describe("one server per caller", () => {
+  const configA: MailgunConfig = { apiKey: "key-a", hostname: "api.mailgun.net" };
+  const configB: MailgunConfig = { apiKey: "key-b", hostname: "api.eu.mailgun.net" };
+
+  test("each server calls Mailgun with its own config, even when calls interleave", async () => {
+    const catalog = buildToolCatalog(openApiSpec, "dynamic");
+    const [a, b] = await Promise.all([
+      connectClient(catalog, configA),
+      connectClient(catalog, configB),
+    ]);
+
+    await Promise.all(
+      (
+        [
+          [a, "a.example.com"],
+          [b, "b.example.com"],
+        ] as const
+      ).flatMap(([on, domain]) => [
+        call("get-v4-domains-name", { name: domain }, on),
+        call("get_metrics_summary", { domain }, on),
+        call(
+          "mailgun_call_tool",
+          { name: "get-v3-domains-domain-webhooks", arguments: { domain } },
+          on,
+        ),
+      ]),
+    );
+
+    // Each request names its caller's domain, so it must carry that caller's config.
+    const { calls } = vi.mocked(makeMailgunRequest).mock;
+    const requests = calls.map(([config, , path, data]) => {
+      const domain = JSON.stringify([path, data]).includes("a.example.com") ? "a" : "b";
+      return `${domain} -> ${config.apiKey}@${config.hostname}`;
+    });
+    expect(requests.toSorted()).toEqual([
+      ...Array<string>(3).fill("a -> key-a@api.mailgun.net"),
+      ...Array<string>(3).fill("b -> key-b@api.eu.mailgun.net"),
+    ]);
+  });
+
+  test("loading a toolset on one server leaves servers built from the same catalog alone", async () => {
+    const catalog = buildToolCatalog(openApiSpec, "dynamic");
+    const a = await connectClient(catalog, configA);
+    await call("mailgun_enable_toolset", { toolsets: ["send.templates"] }, a);
+    const b = await connectClient(catalog, configB);
+
+    expect(await toolNames(a)).toContain("post-v3-domain-templates");
+    expect(await toolNames(b)).toEqual([...CORE_TOOLS, ...META_TOOLS].toSorted());
+    const { tools } = await b.listTools();
+    expect(tools.find((tool) => tool.name === "get-v3-domain-templates")!.description).toBe(
+      `Get templates ${toolsetHint("send.templates")}`,
     );
   });
 });

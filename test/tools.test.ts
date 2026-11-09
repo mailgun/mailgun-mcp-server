@@ -5,9 +5,10 @@ import {
   appendQueryString,
   formatErrorMessage,
 } from "../src/tools.js";
-import { generateToolsFromOpenApi } from "../src/tools.js";
-import { ToolLoader } from "../src/toolsets.js";
+import { buildOpenApiTools } from "../src/tools.js";
 import { MailgunApiError } from "../src/api.js";
+import type { MailgunConfig } from "../src/config.js";
+import type { ActiveTags } from "../src/tags.js";
 import type { OpenApiOperation, OpenApiSpec } from "../src/types.js";
 
 const originalConsoleError = console.error;
@@ -189,11 +190,22 @@ describe("appendQueryString()", () => {
   });
 });
 
-describe("generateToolsFromOpenApi()", () => {
+describe("buildOpenApiTools()", () => {
+  const mailgunConfig: MailgunConfig = { apiKey: "key-test", hostname: "api.mailgun.net" };
+
+  // Registers every built tool on a fake server and returns its registerTool mock.
+  function registerAll(spec: OpenApiSpec, activeTags: ActiveTags) {
+    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
+    for (const tool of buildOpenApiTools(spec, activeTags)) {
+      tool.register({ registerTool: mockRegisterTool } as never, mailgunConfig);
+    }
+    return mockRegisterTool;
+  }
+
   test("warns for endpoints not found in spec", () => {
     (console.warn as ReturnType<typeof vi.fn>).mockClear();
 
-    generateToolsFromOpenApi({ paths: {} }, { registerTool: vi.fn<() => void>() } as never, "all");
+    buildOpenApiTools({ paths: {} }, "all");
 
     expect(console.warn).toHaveBeenCalled();
   });
@@ -209,9 +221,7 @@ describe("generateToolsFromOpenApi()", () => {
         },
       },
     };
-    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
-
-    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never, "all");
+    const mockRegisterTool = registerAll(spec, "all");
 
     expect(mockRegisterTool).toHaveBeenCalled();
     expect(mockRegisterTool.mock.calls[0][0]).toBe("get-v4-domains");
@@ -225,9 +235,7 @@ describe("generateToolsFromOpenApi()", () => {
         },
       },
     };
-    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
-
-    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never, "all");
+    const mockRegisterTool = registerAll(spec, "all");
 
     const registeredNames = mockRegisterTool.mock.calls.map((c) => c[0]);
     expect(registeredNames).toContain("validate_email");
@@ -241,9 +249,7 @@ describe("generateToolsFromOpenApi()", () => {
         },
       },
     };
-    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
-
-    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never, new Set(["send"]));
+    const mockRegisterTool = registerAll(spec, new Set(["send"]));
 
     const registeredNames = mockRegisterTool.mock.calls.map((c) => c[0]);
     expect(registeredNames).not.toContain("validate_email");
@@ -257,13 +263,7 @@ describe("generateToolsFromOpenApi()", () => {
         },
       },
     };
-    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
-
-    generateToolsFromOpenApi(
-      spec,
-      { registerTool: mockRegisterTool } as never,
-      new Set(["validate"]),
-    );
+    const mockRegisterTool = registerAll(spec, new Set(["validate"]));
 
     const registeredNames = mockRegisterTool.mock.calls.map((c) => c[0]);
     expect(registeredNames).toContain("validate_email");
@@ -277,9 +277,7 @@ describe("generateToolsFromOpenApi()", () => {
         },
       },
     };
-    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
-
-    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never, "all");
+    const mockRegisterTool = registerAll(spec, "all");
 
     const validateCall = mockRegisterTool.mock.calls.find((c) => c[0] === "validate_email");
     expect(validateCall).toBeDefined();
@@ -298,9 +296,7 @@ describe("generateToolsFromOpenApi()", () => {
         "/v3/lists": { post: { summary: "Create a mailing list", parameters: [] } },
       },
     };
-    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
-
-    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never, "all");
+    const mockRegisterTool = registerAll(spec, "all");
 
     const hints = Object.fromEntries(
       mockRegisterTool.mock.calls.map((c) => [
@@ -312,31 +308,6 @@ describe("generateToolsFromOpenApi()", () => {
       "get-v4-domains": true,
       "post-v1-analytics-logs": true,
       "post-v3-lists": false,
-    });
-  });
-
-  test("adds each registered tool and its handle to the loader", () => {
-    const spec: OpenApiSpec = {
-      paths: {
-        "/v3/{domain_name}/templates": {
-          get: { summary: "Get templates", parameters: [] },
-        },
-      },
-    };
-    const handle = { enabled: true };
-    const mockRegisterTool = vi.fn<(...args: unknown[]) => unknown>(() => handle);
-    const loader = new ToolLoader();
-
-    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never, "dynamic", loader);
-
-    expect(loader.get("get-v3-domain-templates")).toEqual({
-      name: "get-v3-domain-templates",
-      description: "Get templates",
-      tags: ["send"],
-      toolset: "send.templates",
-      core: true,
-      readOnly: true,
-      handle,
     });
   });
 });

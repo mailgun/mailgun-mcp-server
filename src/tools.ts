@@ -6,12 +6,18 @@ import type {
   PathParametersResult,
   SeparatedParameters,
 } from "./types.js";
+import type { MailgunConfig } from "./config.js";
 import { endpointLabel, endpoints, parseEndpointEntry } from "./endpoints.js";
 import { makeMailgunRequest, MailgunApiError } from "./api.js";
 import { getOperationDetails, getRequestContentType } from "./openapi.js";
 import { buildParamsSchema, sanitizeToolId } from "./schema.js";
 import { type ActiveTags, shouldRegister, type ToolClassification, toolConfig } from "./tags.js";
-import type { ToolLoader } from "./toolsets.js";
+
+// Built once at startup. register() adds the tool to one server, bound to that server's config.
+export interface ToolDefinition extends ToolClassification {
+  name: string;
+  register: (server: McpServer, config: MailgunConfig) => RegisteredTool;
+}
 
 export const HttpStatus = {
   BAD_REQUEST: 400,
@@ -22,12 +28,11 @@ export const HttpStatus = {
 
 const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,53}$/;
 
-export function generateToolsFromOpenApi(
+export function buildOpenApiTools(
   openApiSpec: OpenApiSpec,
-  server: McpServer,
   activeTags: ActiveTags,
-  loader?: ToolLoader,
-): void {
+): ToolDefinition[] {
+  const tools: ToolDefinition[] = [];
   for (const endpoint of endpoints) {
     try {
       const { method, path, toolNameOverride, ...classification } = parseEndpointEntry(endpoint);
@@ -53,29 +58,36 @@ export function generateToolsFromOpenApi(
       const toolDescription = operation.summary || `${method.toUpperCase()} ${path}`;
       const contentType = getRequestContentType(operation);
 
-      const handle = registerTool(
-        server,
-        toolId,
-        toolDescription,
-        paramsSchema,
-        method,
-        path,
-        operation,
-        contentType,
-        keyMapping,
-        classification,
-      );
-      loader?.add({ name: toolId, description: toolDescription, ...classification, handle });
+      tools.push({
+        name: toolId,
+        ...classification,
+        register: (server, config) =>
+          registerTool(
+            server,
+            config,
+            toolId,
+            toolDescription,
+            paramsSchema,
+            method,
+            path,
+            operation,
+            contentType,
+            keyMapping,
+            classification,
+          ),
+      });
     } catch (error) {
       console.error(
         `Failed to process endpoint ${endpointLabel(endpoint)}: ${(error as Error).message}`,
       );
     }
   }
+  return tools;
 }
 
 export function registerTool(
   server: McpServer,
+  config: MailgunConfig,
   toolId: string,
   toolDescription: string,
   paramsSchema: Record<string, z.ZodType>,
@@ -111,6 +123,7 @@ export function registerTool(
         const finalPath = appendQueryString(actualPath, queryParams);
 
         const result = await makeMailgunRequest(
+          config,
           httpMethod,
           finalPath,
           httpMethod === "GET" ? null : bodyParams,
