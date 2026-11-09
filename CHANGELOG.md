@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.1
+### Dependencies
+- **Address vulenrabilities in dependencies.** Ran `npm audit fix --force`
+- **Add `fsevents` to allowScripts.** Ran `npm approve-scripts fsevents`
+
 ## 2.3.0
 
 ### Added
@@ -31,7 +36,7 @@
 
 ### Removed
 
-- Removed all deprecated `GET /v1/bounce-classification/...` endpoints. 
+- Removed all deprecated `GET /v1/bounce-classification/...` endpoints.
   Use the `POST /v2/bounce-classification/metrics` endpoint instead.
 
 ## 2.1.0
