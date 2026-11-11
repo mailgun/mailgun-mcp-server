@@ -1,7 +1,7 @@
 import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MailgunConfig } from "../config.js";
 import { type ActiveTags, shouldRegister, type ToolClassification } from "../tags.js";
-import type { ToolDefinition } from "../tools.js";
+import type { ToolDefinition } from "../types.js";
 import {
   TOOL_NAME as GET_METRICS_SUMMARY,
   register as registerGetMetricsSummary,

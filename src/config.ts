@@ -18,6 +18,7 @@ export function resolveApiHostname(env: NodeJS.ProcessEnv): string {
 }
 
 // LOCAL: one key for the whole process, read from the environment once at startup.
+// Returns undefined without a key: this way, main() can print its usual setup error and exit.
 export function localConfig(env: NodeJS.ProcessEnv): MailgunConfig | undefined {
   const apiKey = env.MAILGUN_API_KEY;
   if (!apiKey) return undefined;
@@ -25,6 +26,8 @@ export function localConfig(env: NodeJS.ProcessEnv): MailgunConfig | undefined {
 }
 
 // HOSTED: the caller's key on the deployment's fixed hostname, built per request.
+// Throws without a key: the HTTP layer should already have rejected a request with no
+// credential, so reaching here without one is likely a bug, so we prevent going forward.
 export function hostedConfig(apiKey: string, hostname: string): MailgunConfig {
   if (!apiKey) {
     throw new Error("A Mailgun API key is required.");

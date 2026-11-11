@@ -5,6 +5,7 @@ import type {
   OpenApiSpec,
   PathParametersResult,
   SeparatedParameters,
+  ToolDefinition,
 } from "./types.js";
 import type { MailgunConfig } from "./config.js";
 import { endpointLabel, endpoints, parseEndpointEntry } from "./endpoints.js";
@@ -12,12 +13,6 @@ import { makeMailgunRequest, MailgunApiError } from "./api.js";
 import { getOperationDetails, getRequestContentType } from "./openapi.js";
 import { buildParamsSchema, sanitizeToolId } from "./schema.js";
 import { type ActiveTags, shouldRegister, type ToolClassification, toolConfig } from "./tags.js";
-
-// Built once at startup. register() adds the tool to one server, bound to that server's config.
-export interface ToolDefinition extends ToolClassification {
-  name: string;
-  register: (server: McpServer, config: MailgunConfig) => RegisteredTool;
-}
 
 export const HttpStatus = {
   BAD_REQUEST: 400,

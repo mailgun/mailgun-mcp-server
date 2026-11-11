@@ -2,9 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MailgunConfig } from "./config.js";
 import { buildCustomTools } from "./custom-tools/index.js";
 import type { ActiveTags } from "./tags.js";
-import { buildOpenApiTools, type ToolDefinition } from "./tools.js";
+import { buildOpenApiTools } from "./tools.js";
 import { registerMetaTools, ToolLoader } from "./toolsets.js";
-import type { OpenApiSpec } from "./types.js";
+import type { OpenApiSpec, ToolDefinition } from "./types.js";
 import { PACKAGE_VERSION } from "./version.js";
 
 // Every tool the server exposes, built once at startup and shared by all server instances.
