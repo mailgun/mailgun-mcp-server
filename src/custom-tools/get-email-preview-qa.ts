@@ -1,7 +1,7 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { MailgunApiError } from "../api.js";
-import { META_TAGS_KEY, type Tag } from "../tags.js";
+import { type ToolClassification, toolConfig } from "../tags.js";
 import {
   collectEmailPreviewQa,
   EmailPreviewQaPollError,
@@ -58,9 +58,11 @@ function buildErrorResponse(
   return { error: { code, message, retryable, details } };
 }
 
-export function register(server: McpServer, tags: readonly Tag[] = []): void {
-  server.registerTool(
-    "get_email_preview_qa",
+export const TOOL_NAME = "get_email_preview_qa";
+
+export function register(server: McpServer, classification: ToolClassification): RegisteredTool {
+  return server.registerTool(
+    TOOL_NAME,
     {
       description:
         "Resume and summarize an existing email preview QA test. Polls the render status of a test id until it settles (or the timeout is reached), retrieves the requested structured-check results (links, images, accessibility, code analysis), and returns counts and result references. Does not create a test; use run_email_preview_qa to create one.",
@@ -72,7 +74,7 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
           `How long to poll for the render/checks to settle, in whole seconds (integer 0-${MAX_TIMEOUT_SECONDS}, default ${DEFAULT_TIMEOUT_SECONDS}). On timeout the partial summary is returned with timed_out=true; resume with the same test id.`,
         ),
       },
-      _meta: { [META_TAGS_KEY]: [...tags] },
+      ...toolConfig(classification),
     },
     async (params) => {
       const testId = typeof params.test_id === "string" ? params.test_id.trim() : "";

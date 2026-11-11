@@ -1,7 +1,7 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { MailgunApiError } from "../api.js";
-import { META_TAGS_KEY, type Tag } from "../tags.js";
+import { type ToolClassification, toolConfig } from "../tags.js";
 import {
   buildPreviewCreateRequest,
   collectEmailPreviewQa,
@@ -248,9 +248,11 @@ export async function runCreateAndPoll(
   }
 }
 
-export function register(server: McpServer, tags: readonly Tag[] = []): void {
-  server.registerTool(
-    "run_email_preview_qa",
+export const TOOL_NAME = "run_email_preview_qa";
+
+export function register(server: McpServer, classification: ToolClassification): RegisteredTool {
+  return server.registerTool(
+    TOOL_NAME,
     {
       description:
         "Create and summarize an email preview QA test from HTML. This CREATES one remote Mailgun Inspect preview test and CONSUMES preview quota; it does NOT send email. It issues exactly one create request, polls the render/checks until they settle or the timeout is reached, and returns counts and result references. V2 creation is not idempotent and this tool never auto-retries the create: on a timeout it returns partial results with timed_out=true (resume with get_email_preview_qa), and on an ambiguous failure it reports that a test may have been created and recommends list_preview_tests (filtered by subject and a from/to window around the create time) rather than creating another.",
@@ -281,7 +283,7 @@ export function register(server: McpServer, tags: readonly Tag[] = []): void {
           `How long to poll for the render/checks to settle, in whole seconds (integer 0-${MAX_TIMEOUT_SECONDS}, default ${DEFAULT_TIMEOUT_SECONDS}). On timeout the partial summary is returned with timed_out=true; resume with get_email_preview_qa.`,
         ),
       },
-      _meta: { [META_TAGS_KEY]: [...tags] },
+      ...toolConfig(classification),
     },
     async (params) => {
       try {
