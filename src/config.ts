@@ -4,9 +4,33 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY;
-export const MAILGUN_API_REGION = (process.env.MAILGUN_API_REGION || "us").toLowerCase();
-export const MAILGUN_API_HOSTNAME =
-  process.env.MAILGUN_API_HOSTNAME ||
-  (MAILGUN_API_REGION === "eu" ? "api.eu.mailgun.net" : "api.mailgun.net");
 export const OPENAPI_YAML = path.resolve(__dirname, "openapi.yaml");
+
+export interface MailgunConfig {
+  readonly apiKey: string;
+  readonly hostname: string;
+}
+
+// The region only picks the hostname; MAILGUN_API_HOSTNAME overrides both.
+export function resolveApiHostname(env: NodeJS.ProcessEnv): string {
+  const region = (env.MAILGUN_API_REGION || "us").toLowerCase();
+  return env.MAILGUN_API_HOSTNAME || (region === "eu" ? "api.eu.mailgun.net" : "api.mailgun.net");
+}
+
+// LOCAL: one key for the whole process, read from the environment once at startup.
+// Returns undefined without a key: this way, main() can print its usual setup error and exit.
+export function localConfig(env: NodeJS.ProcessEnv): MailgunConfig | undefined {
+  const apiKey = env.MAILGUN_API_KEY;
+  if (!apiKey) return undefined;
+  return { apiKey, hostname: resolveApiHostname(env) };
+}
+
+// HOSTED: the caller's key on the deployment's fixed hostname, built per request.
+// Throws without a key: the HTTP layer should already have rejected a request with no
+// credential, so reaching here without one is likely a bug, so we prevent going forward.
+export function hostedConfig(apiKey: string, hostname: string): MailgunConfig {
+  if (!apiKey) {
+    throw new Error("A Mailgun API key is required.");
+  }
+  return { apiKey, hostname };
+}

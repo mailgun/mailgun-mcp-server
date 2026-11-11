@@ -1,5 +1,5 @@
 import https from "node:https";
-import { MAILGUN_API_KEY, MAILGUN_API_HOSTNAME } from "./config.js";
+import type { MailgunConfig } from "./config.js";
 import { USER_AGENT } from "./version.js";
 
 export class MailgunApiError extends Error {
@@ -14,6 +14,7 @@ export class MailgunApiError extends Error {
 }
 
 export async function makeMailgunRequest(
+  config: MailgunConfig,
   method: string,
   requestPath: string,
   data: Record<string, unknown> | null = null,
@@ -22,9 +23,9 @@ export async function makeMailgunRequest(
   return new Promise((resolve, reject) => {
     const cleanPath = requestPath.startsWith("/") ? requestPath.substring(1) : requestPath;
 
-    const auth = Buffer.from(`api:${MAILGUN_API_KEY}`).toString("base64");
+    const auth = Buffer.from(`api:${config.apiKey}`).toString("base64");
     const options: https.RequestOptions = {
-      hostname: MAILGUN_API_HOSTNAME,
+      hostname: config.hostname,
       path: `/${cleanPath}`,
       method: method,
       headers: {

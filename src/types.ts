@@ -1,4 +1,9 @@
+import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { z } from "zod";
+import type { MailgunConfig } from "./config.js";
+import type { ToolClassification } from "./tags.js";
+
+// --- OpenAPI spec ---
 
 export interface OpenApiSchema {
   $ref?: string;
@@ -56,6 +61,8 @@ export interface OpenApiSpec {
   [key: string]: unknown;
 }
 
+// --- OpenAPI helper results ---
+
 export interface OperationDetails {
   operation: OpenApiOperation;
   operationId: string;
@@ -74,4 +81,13 @@ export interface PathParametersResult {
 export interface SeparatedParameters {
   queryParams: Record<string, unknown>;
   bodyParams: Record<string, unknown>;
+}
+
+// --- Tool catalog ---
+
+// One tool, from the OpenAPI spec or a custom tool. Built once at startup.
+// register() adds the tool to one server, bound to that server's config.
+export interface ToolDefinition extends ToolClassification {
+  name: string;
+  register: (server: McpServer, config: MailgunConfig) => RegisteredTool;
 }

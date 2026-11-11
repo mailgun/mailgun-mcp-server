@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import type { RequestOptions } from "node:https";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { MailgunApiError, makeMailgunRequest } from "../src/api.js";
+import type { MailgunConfig } from "../src/config.js";
 import { USER_AGENT } from "../src/version.js";
 
 class FakeClientRequest extends EventEmitter {
@@ -45,13 +46,28 @@ describe("MailgunApiError", () => {
   });
 });
 
-describe("makeMailgunRequest user agent", () => {
+describe("makeMailgunRequest", () => {
+  const usConfig: MailgunConfig = { apiKey: "key-us", hostname: "api.mailgun.net" };
+  const euConfig: MailgunConfig = { apiKey: "key-eu", hostname: "api.eu.mailgun.net" };
+
   afterEach(() => {
     hoisted.lastOptions = null;
   });
 
   test("sends the Mailgun MCP user agent on every request", async () => {
-    await expect(makeMailgunRequest("GET", "/v3/domains")).resolves.toEqual({ ok: true });
+    await expect(makeMailgunRequest(usConfig, "GET", "/v3/domains")).resolves.toEqual({
+      ok: true,
+    });
     expect(hoisted.lastOptions?.headers?.["User-Agent"]).toBe(USER_AGENT);
   });
+
+  test.each([usConfig, euConfig])(
+    "calls the host with the key of the config it's given ($hostname)",
+    async (config) => {
+      await makeMailgunRequest(config, "GET", "/v3/domains");
+      const basic = Buffer.from(`api:${config.apiKey}`).toString("base64");
+      expect(hoisted.lastOptions?.hostname).toBe(config.hostname);
+      expect(hoisted.lastOptions?.headers?.["Authorization"]).toBe(`Basic ${basic}`);
+    },
+  );
 });
