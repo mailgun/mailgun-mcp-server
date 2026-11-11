@@ -37,7 +37,7 @@ Conditional, called only for the stated reason:
 - `get_code_analysis_result`: explain or remediate code-analysis findings.
 - `list_preview_tests`: optional manual troubleshooting after an uncertain create; never automatic reconciliation.
 
-If a required tool is unavailable, stop and give setup guidance: the Mailgun MCP server (`@mailgun/mcp-server`) must be configured with `MAILGUN_API_KEY` and must not exclude the `inspect` tag. Do not substitute raw API, shell, or CLI calls.
+If a required tool is unavailable but `mailgun_enable_toolset` is (the server runs with `--tags dynamic`), call it with `["inspect"]` first. If a required tool is still unavailable, stop and give setup guidance: the Mailgun MCP server (`@mailgun/mcp-server`) must be configured with `MAILGUN_API_KEY` and must not exclude the `inspect` tag. Do not substitute raw API, shell, or CLI calls.
 
 ## Intent routing
 

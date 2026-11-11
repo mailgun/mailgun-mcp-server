@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.2.0
+## 2.4.0
 
 ### Added
 
@@ -35,6 +35,9 @@
   contract. The MCP tools behave identically without it. Repository tests
   validate the skill structure, tool-name drift, mocked transcript scenarios,
   and packaged tarball contents.
+- The new tools belong to the `inspect` toolset. With `--tags dynamic` they load with
+  `mailgun_enable_toolset`, and `run_email_preview_qa` is marked as changing data
+  (`readOnlyHint: false`), so `mailgun_call_tool` won't run it.
 
 ### Notes
 
@@ -43,6 +46,45 @@
   Mailgun-authored pass/fail verdict; quality gating is owned by the customer.
 - `run_email_preview_qa` is a mutating, quota-consuming action. A broader, MCP-wide
   review of mutation safety is tracked as a separate follow-up.
+
+## 2.3.1
+### Dependencies
+- **Address vulenrabilities in dependencies.** Ran `npm audit fix --force`
+- **Add `fsevents` to allowScripts.** Ran `npm approve-scripts fsevents`
+
+## 2.3.0
+
+### Added
+
+- **Opt-in on-demand loading.** `--tags dynamic` (or `MAILGUN_MCP_TAGS=dynamic`) starts
+  the server with 15 core tools plus 3 "tool-loading" tools instead of all 73, about
+  29 KB of tool definitions instead of about 68 KB. The model calls
+  `mailgun_list_toolsets` and `mailgun_enable_toolset` to load more tools, and the
+  server sends `notifications/tools/list_changed` when it does. `mailgun_call_tool` runs
+  read-only tools by name, whether or not their toolset is loaded, for clients that
+  don't refresh their tool list, and refuses core tools and tools that change data.
+  The default is unchanged: every tool loads at startup.
+- **Toolsets.** The `send` tag is split into `send.<group>` toolsets (`send.messages`,
+  `send.domains`, `send.webhooks`, `send.account`, `send.message_tags`,
+  `send.analytics`, `send.suppressions`, `send.routes`, `send.lists`,
+  `send.templates`); `validate`, `optimize`, and `inspect` are toolsets of their own.
+  `--tags` accepts toolset IDs, `core`, `all`, and `dynamic`, and `send` still matches every
+  `send.<group>` toolset. `--list-tags` prints every value with a description.
+- **`readOnlyHint` annotations** on every tool.
+- **`_meta["com.mailgun/toolset"]`** on every tool, next to
+  `_meta["com.mailgun/tags"]`.
+
+### Dependencies
+
+- Raised the `@modelcontextprotocol/sdk` minimum version to `^1.24.0`, the first version
+  with zod 4 support and the tool handler API needed for this release.
+
+## 2.2.0
+
+### Removed
+
+- Removed all deprecated `GET /v1/bounce-classification/...` endpoints.
+  Use the `POST /v2/bounce-classification/metrics` endpoint instead.
 
 ## 2.1.2
 

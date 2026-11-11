@@ -24,7 +24,7 @@ export function collectRegisteredToolNames(): Set<string> {
       names.add(name);
     },
   };
-  registerCustomTools(stub as unknown as McpServer);
+  registerCustomTools(stub as unknown as McpServer, "all");
 
   return names;
 }

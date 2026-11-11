@@ -2,15 +2,12 @@ import { describe, test, expect } from "vitest";
 import { z } from "zod";
 import { loadOpenApiSpec, getOperationDetails, getRequestContentType } from "../src/openapi.js";
 import { buildParamsSchema, sanitizeToolId } from "../src/schema.js";
-import { endpoints, parseEndpointEntry } from "../src/endpoints.js";
-import { isKnownTag } from "../src/tags.js";
+import { endpointGroups, endpointLabel, endpoints, parseEndpointEntry } from "../src/endpoints.js";
+import { isKnownTag, TOOLSET_IDS, toolsetTag } from "../src/tags.js";
 
 const isOptional = (schema: z.ZodType): boolean => schema.safeParse(undefined).success;
 
 const openApiSpec = loadOpenApiSpec(new URL("../src/openapi.yaml", import.meta.url).pathname);
-
-const endpointLabel = (entry: (typeof endpoints)[number]): string =>
-  typeof entry === "string" ? entry : entry.endpoint;
 
 describe("endpoint validation against OpenAPI spec", () => {
   test("every endpoint matches a path and method in the OpenAPI spec", () => {
@@ -119,13 +116,80 @@ describe("endpoint validation against OpenAPI spec", () => {
     expect(violations).toEqual([]);
   });
 
-  test("untagged string entries default to ['send']", () => {
-    const sendOnly = endpoints.filter((entry) => typeof entry === "string");
-    expect(sendOnly.length).toBeGreaterThan(0);
-    for (const entry of sendOnly) {
-      const { tags } = parseEndpointEntry(entry);
-      expect(tags).toEqual(["send"]);
+  test("untagged entries take the product tag of their toolset", () => {
+    const untagged = endpoints.filter(({ entry }) => typeof entry === "string" || !entry.tags);
+    expect(untagged.length).toBeGreaterThan(0);
+    for (const endpoint of untagged) {
+      const { tags } = parseEndpointEntry(endpoint);
+      expect(tags).toEqual([toolsetTag(endpoint.toolset)]);
     }
+  });
+});
+
+describe("toolset grouping", () => {
+  test("covers all 80 endpoints", () => {
+    expect(endpoints).toHaveLength(80);
+  });
+
+  test("every toolset has at least one endpoint", () => {
+    const empty = TOOLSET_IDS.filter((id) => endpointGroups[id].length === 0);
+    expect(empty).toEqual([]);
+  });
+
+  test("every endpoint is tagged with its toolset's product tag", () => {
+    const violations = endpoints
+      .map((endpoint) => ({ endpoint, parsed: parseEndpointEntry(endpoint) }))
+      .filter(({ endpoint, parsed }) => !parsed.tags.includes(toolsetTag(endpoint.toolset)))
+      .map(({ endpoint }) => endpointLabel(endpoint));
+    expect(violations).toEqual([]);
+  });
+
+  test("core endpoints are the expected set", () => {
+    const core = endpoints
+      .map((endpoint) => parseEndpointEntry(endpoint))
+      .filter(({ core }) => core)
+      .map(({ method, path }) => `${method} ${path}`);
+    expect(core).toEqual([
+      "POST /v3/{domain_name}/messages",
+      "GET /v4/domains",
+      "GET /v4/domains/{name}",
+      "PUT /v4/domains/{name}/verify",
+      "GET /v3/domains/{name}/tracking",
+      "POST /v1/analytics/metrics",
+      "POST /v1/analytics/logs",
+      "POST /v2/bounce-classification/metrics",
+      "GET /v3/{domain_name}/bounces/{address}",
+      "GET /v3/{domain_name}/bounces",
+      "GET /v3/{domain_name}/unsubscribes",
+      "GET /v3/{domain_name}/complaints",
+      "GET /v3/{domain_name}/templates",
+      "GET /v4/address/validate",
+    ]);
+  });
+});
+
+describe("readOnly classification", () => {
+  const parsed = endpoints.map((endpoint) => parseEndpointEntry(endpoint));
+
+  test("every GET endpoint is read-only", () => {
+    const writes = parsed.filter((e) => e.method === "GET" && !e.readOnly);
+    expect(writes).toEqual([]);
+  });
+
+  test("non-GET endpoints that only read data are read-only", () => {
+    const readOnlyNonGets = parsed
+      .filter((e) => e.method !== "GET" && e.readOnly)
+      .map(({ method, path }) => `${method} ${path}`);
+    expect(readOnlyNonGets).toEqual([
+      "POST /v1/analytics/metrics",
+      "POST /v1/analytics/usage/metrics",
+      "POST /v1/analytics/logs",
+      "POST /v2/bounce-classification/metrics",
+    ]);
+  });
+
+  test("every other POST/PUT endpoint is a write", () => {
+    expect(parsed.filter((e) => !e.readOnly)).toHaveLength(17);
   });
 });
 

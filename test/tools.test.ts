@@ -6,6 +6,7 @@ import {
   formatErrorMessage,
 } from "../src/tools.js";
 import { generateToolsFromOpenApi } from "../src/tools.js";
+import { ToolLoader } from "../src/toolsets.js";
 import { MailgunApiError } from "../src/api.js";
 import type { OpenApiOperation, OpenApiSpec } from "../src/types.js";
 
@@ -192,7 +193,7 @@ describe("generateToolsFromOpenApi()", () => {
   test("warns for endpoints not found in spec", () => {
     (console.warn as ReturnType<typeof vi.fn>).mockClear();
 
-    generateToolsFromOpenApi({ paths: {} }, { registerTool: vi.fn<() => void>() } as never);
+    generateToolsFromOpenApi({ paths: {} }, { registerTool: vi.fn<() => void>() } as never, "all");
 
     expect(console.warn).toHaveBeenCalled();
   });
@@ -210,13 +211,13 @@ describe("generateToolsFromOpenApi()", () => {
     };
     const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
 
-    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never);
+    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never, "all");
 
     expect(mockRegisterTool).toHaveBeenCalled();
     expect(mockRegisterTool.mock.calls[0][0]).toBe("get-v4-domains");
   });
 
-  test('default activeTags="all" registers every endpoint that resolves in spec', () => {
+  test('"all" registers every endpoint that resolves in spec', () => {
     const spec: OpenApiSpec = {
       paths: {
         "/v4/address/validate": {
@@ -226,7 +227,7 @@ describe("generateToolsFromOpenApi()", () => {
     };
     const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
 
-    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never);
+    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never, "all");
 
     const registeredNames = mockRegisterTool.mock.calls.map((c) => c[0]);
     expect(registeredNames).toContain("validate_email");
@@ -268,7 +269,7 @@ describe("generateToolsFromOpenApi()", () => {
     expect(registeredNames).toContain("validate_email");
   });
 
-  test('attaches _meta["com.mailgun/tags"] reflecting the entry tags', () => {
+  test('attaches _meta["com.mailgun/tags"] and _meta["com.mailgun/toolset"]', () => {
     const spec: OpenApiSpec = {
       paths: {
         "/v4/address/validate": {
@@ -278,12 +279,65 @@ describe("generateToolsFromOpenApi()", () => {
     };
     const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
 
-    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never);
+    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never, "all");
 
     const validateCall = mockRegisterTool.mock.calls.find((c) => c[0] === "validate_email");
     expect(validateCall).toBeDefined();
     const config = validateCall![1] as { _meta?: Record<string, unknown> };
-    expect(config._meta).toEqual({ "com.mailgun/tags": ["validate"] });
+    expect(config._meta).toEqual({
+      "com.mailgun/tags": ["validate"],
+      "com.mailgun/toolset": "validate",
+    });
+  });
+
+  test("sets readOnlyHint from the endpoint's readOnly classification", () => {
+    const spec: OpenApiSpec = {
+      paths: {
+        "/v4/domains": { get: { summary: "Get domains", parameters: [] } },
+        "/v1/analytics/logs": { post: { summary: "List logs", parameters: [] } },
+        "/v3/lists": { post: { summary: "Create a mailing list", parameters: [] } },
+      },
+    };
+    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
+
+    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never, "all");
+
+    const hints = Object.fromEntries(
+      mockRegisterTool.mock.calls.map((c) => [
+        c[0],
+        (c[1] as { annotations?: { readOnlyHint?: boolean } }).annotations?.readOnlyHint,
+      ]),
+    );
+    expect(hints).toEqual({
+      "get-v4-domains": true,
+      "post-v1-analytics-logs": true,
+      "post-v3-lists": false,
+    });
+  });
+
+  test("adds each registered tool and its handle to the loader", () => {
+    const spec: OpenApiSpec = {
+      paths: {
+        "/v3/{domain_name}/templates": {
+          get: { summary: "Get templates", parameters: [] },
+        },
+      },
+    };
+    const handle = { enabled: true };
+    const mockRegisterTool = vi.fn<(...args: unknown[]) => unknown>(() => handle);
+    const loader = new ToolLoader();
+
+    generateToolsFromOpenApi(spec, { registerTool: mockRegisterTool } as never, "dynamic", loader);
+
+    expect(loader.get("get-v3-domain-templates")).toEqual({
+      name: "get-v3-domain-templates",
+      description: "Get templates",
+      tags: ["send"],
+      toolset: "send.templates",
+      core: true,
+      readOnly: true,
+      handle,
+    });
   });
 });
 
