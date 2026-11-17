@@ -431,6 +431,24 @@ Open the Inspector UI, click **Connect**, then use **List Tools** to verify the 
 MAILGUN_API_KEY=YOUR-mailgun-api-key npx @modelcontextprotocol/inspector node dist/mailgun-mcp.js --tags validate,inspect
 ```
 
+### HTTP entrypoint
+
+`dist/http.js` serves the same tools over stateless Streamable HTTP, for running the server as a shared service. It reads no API key from the environment: every `POST /mcp` request must send `Authorization: Bearer YOUR-mailgun-api-key`, and that key is used for that request only. Requests without a bearer get `401`. `GET /_health` returns `200` without auth, for health checks.
+
+```bash
+npm run build
+PORT=3000 npm run start:http
+```
+
+| Variable               | Default              | Description                                                     |
+| ---------------------- | -------------------- | --------------------------------------------------------------- |
+| `PORT`                 | `3000`               | Port to listen on                                               |
+| `HOST`                 | `0.0.0.0`            | Interface to bind                                               |
+| `MAILGUN_API_REGION`   | `us`                 | Fixed region for every request (`us` or `eu`)                   |
+| `MAILGUN_API_HOSTNAME` | (derived from region) | Fixed API hostname for every request; takes precedence over the region |
+
+Every tool is always loaded. `MAILGUN_MCP_TAGS` isn't supported here, and the server exits at startup if it's set.
+
 ### Pre-commit hooks
 
 `npm install` installs a git pre-commit hook (via husky) that runs `oxlint --fix` and `oxfmt` on staged TypeScript/JavaScript files and runs `npm run check:versions`. Fixable issues are auto-fixed and re-staged; commits that introduce unfixable lint errors or version-sync mismatches are rejected. If you already had a local clone before this change, run `npm install` once to install the hook.

@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import type { OutgoingHttpHeaders } from "node:http";
 import type { RequestOptions } from "node:https";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { MailgunApiError, makeMailgunRequest } from "../src/api.js";
@@ -13,6 +14,9 @@ class FakeClientRequest extends EventEmitter {
 const hoisted = vi.hoisted(() => ({
   lastOptions: null as RequestOptions | null,
 }));
+
+const sentHeaders = (): OutgoingHttpHeaders | undefined =>
+  hoisted.lastOptions?.headers as OutgoingHttpHeaders | undefined;
 
 vi.mock("node:https", () => ({
   default: {
@@ -58,7 +62,7 @@ describe("makeMailgunRequest", () => {
     await expect(makeMailgunRequest(usConfig, "GET", "/v3/domains")).resolves.toEqual({
       ok: true,
     });
-    expect(hoisted.lastOptions?.headers?.["User-Agent"]).toBe(USER_AGENT);
+    expect(sentHeaders()?.["User-Agent"]).toBe(USER_AGENT);
   });
 
   test.each([usConfig, euConfig])(
@@ -67,7 +71,7 @@ describe("makeMailgunRequest", () => {
       await makeMailgunRequest(config, "GET", "/v3/domains");
       const basic = Buffer.from(`api:${config.apiKey}`).toString("base64");
       expect(hoisted.lastOptions?.hostname).toBe(config.hostname);
-      expect(hoisted.lastOptions?.headers?.["Authorization"]).toBe(`Basic ${basic}`);
+      expect(sentHeaders()?.["Authorization"]).toBe(`Basic ${basic}`);
     },
   );
 });
