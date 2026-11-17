@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+### Added
+- **HTTP entrypoint.** `dist/http.js` (`npm run start:http`) serves every tool over stateless
+  Streamable HTTP at `POST /mcp`. Each request must send `Authorization: Bearer <apiKey>`;
+  the key is used for that request only, and requests without one get `401`. `GET /_health`
+  answers without auth. Configure with `PORT`, `HOST`, `MAILGUN_API_REGION`, and
+  `MAILGUN_API_HOSTNAME`. `MAILGUN_MCP_TAGS` isn't supported on this entrypoint yet.
+  The stdio CLI is unchanged.
+
 ## 2.3.1
 ### Dependencies
 - **Address vulenrabilities in dependencies.** Ran `npm audit fix --force`
