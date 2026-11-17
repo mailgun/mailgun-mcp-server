@@ -36,6 +36,7 @@
     "prepare": "husky",
     "prepublishOnly": "npm run build",
     "start": "node dist/mailgun-mcp.js",
+    "start:http": "node dist/http.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest"
