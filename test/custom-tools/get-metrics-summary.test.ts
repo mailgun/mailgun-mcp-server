@@ -4,8 +4,10 @@ import {
   buildMetricsSummaryOutput,
   register,
 } from "../../src/custom-tools/get-metrics-summary.js";
-import { registerCustomTools } from "../../src/custom-tools/index.js";
-import { ToolLoader } from "../../src/toolsets.js";
+import { buildCustomTools } from "../../src/custom-tools/index.js";
+import type { MailgunConfig } from "../../src/config.js";
+
+const mailgunConfig: MailgunConfig = { apiKey: "key-test", hostname: "api.mailgun.net" };
 
 describe("buildMetricsRequestBody()", () => {
   test("includes domain filter and default duration when no window provided", () => {
@@ -242,7 +244,7 @@ describe("buildMetricsRequestBody() window guardrails", () => {
 describe("register()", () => {
   test("attaches _meta and readOnlyHint from the supplied classification", () => {
     const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
-    register({ registerTool: mockRegisterTool } as never, {
+    register({ registerTool: mockRegisterTool } as never, mailgunConfig, {
       tags: ["send"],
       toolset: "send.analytics",
       core: true,
@@ -262,25 +264,22 @@ describe("register()", () => {
   });
 });
 
-describe("registerCustomTools()", () => {
-  test('"all" registers get_metrics_summary', () => {
-    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
-    registerCustomTools({ registerTool: mockRegisterTool } as never, "all");
+describe("buildCustomTools()", () => {
+  const names = (tools: ReturnType<typeof buildCustomTools>) => tools.map((tool) => tool.name);
 
-    const names = mockRegisterTool.mock.calls.map((c) => c[0]);
-    expect(names).toContain("get_metrics_summary");
+  test('"all" includes get_metrics_summary', () => {
+    expect(names(buildCustomTools("all"))).toContain("get_metrics_summary");
   });
 
-  test("disjoint activeTags skips registering get_metrics_summary", () => {
-    const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
-    registerCustomTools({ registerTool: mockRegisterTool } as never, new Set(["validate"]));
-
-    expect(mockRegisterTool).not.toHaveBeenCalled();
+  test("disjoint activeTags leaves out get_metrics_summary", () => {
+    expect(buildCustomTools(new Set(["validate"]))).toEqual([]);
   });
 
   test("intersecting activeTags registers get_metrics_summary with _meta", () => {
     const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
-    registerCustomTools({ registerTool: mockRegisterTool } as never, new Set(["send"]));
+    for (const tool of buildCustomTools(new Set(["send"]))) {
+      tool.register({ registerTool: mockRegisterTool } as never, mailgunConfig);
+    }
 
     expect(mockRegisterTool).toHaveBeenCalledTimes(1);
     expect(mockRegisterTool.mock.calls[0][0]).toBe("get_metrics_summary");
@@ -293,28 +292,10 @@ describe("registerCustomTools()", () => {
     });
   });
 
-  test("selecting its toolset or core registers get_metrics_summary", () => {
-    const calls = (["send.analytics", "core"] as const).map((selector) => {
-      const mockRegisterTool = vi.fn<(...args: unknown[]) => void>();
-      registerCustomTools({ registerTool: mockRegisterTool } as never, new Set([selector]));
-      return mockRegisterTool.mock.calls.length;
-    });
-    expect(calls).toEqual([1, 1]);
-  });
-
-  test("adds get_metrics_summary to the loader as a core, read-only tool", () => {
-    const handle = { enabled: true, description: "Retrieve a summary." };
-    const mockRegisterTool = vi.fn<(...args: unknown[]) => unknown>(() => handle);
-    const loader = new ToolLoader();
-
-    registerCustomTools({ registerTool: mockRegisterTool } as never, "dynamic", loader);
-
-    expect(loader.get("get_metrics_summary")).toMatchObject({
-      toolset: "send.analytics",
-      core: true,
-      readOnly: true,
-      description: "Retrieve a summary.",
-      handle,
-    });
+  test("selecting its toolset or core includes get_metrics_summary", () => {
+    const selected = (["send.analytics", "core"] as const).map((selector) =>
+      names(buildCustomTools(new Set([selector]))),
+    );
+    expect(selected).toEqual([["get_metrics_summary"], ["get_metrics_summary"]]);
   });
 });

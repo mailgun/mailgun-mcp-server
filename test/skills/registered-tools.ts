@@ -2,11 +2,10 @@
 // real registration paths: allowlisted OpenAPI endpoints plus custom tools.
 // Shared by the skill drift and scenario tests.
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { loadOpenApiSpec, getOperationDetails } from "../../src/openapi.js";
 import { sanitizeToolId } from "../../src/schema.js";
 import { endpoints, parseEndpointEntry } from "../../src/endpoints.js";
-import { registerCustomTools } from "../../src/custom-tools/index.js";
+import { buildCustomTools } from "../../src/custom-tools/index.js";
 
 export function collectRegisteredToolNames(): Set<string> {
   const names = new Set<string>();
@@ -19,12 +18,7 @@ export function collectRegisteredToolNames(): Set<string> {
     names.add(toolNameOverride ?? sanitizeToolId(details.operationId));
   }
 
-  const stub = {
-    registerTool: (name: string): void => {
-      names.add(name);
-    },
-  };
-  registerCustomTools(stub as unknown as McpServer, "all");
+  for (const tool of buildCustomTools("all")) names.add(tool.name);
 
   return names;
 }

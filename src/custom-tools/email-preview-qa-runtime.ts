@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import { makeMailgunRequest } from "../api.js";
+import type { MailgunConfig } from "../config.js";
 import { WorkflowDeadlineError } from "./email-preview-qa.js";
 import type { PollDeps, RequestFn } from "./email-preview-qa.js";
 
@@ -40,7 +41,7 @@ export function resolveTimeoutSeconds(value: number | undefined): number {
 
 // Production polling uses per-request aborts and a monotonic clock; tests inject deterministic deps.
 // Created once per tool call; requests are clamped to the handler deadline.
-export function createDefaultDeps(): PollDeps {
+export function createDefaultDeps(config: MailgunConfig): PollDeps {
   const now = (): number => performance.now();
   const handlerDeadline = now() + HANDLER_DEADLINE_MS;
   const request: RequestFn = async (method, path, body) => {
@@ -48,6 +49,7 @@ export function createDefaultDeps(): PollDeps {
     if (remainingMs <= 0) throw new WorkflowDeadlineError();
     try {
       return await makeMailgunRequest(
+        config,
         method,
         path,
         (body as Record<string, unknown> | undefined) ?? null,

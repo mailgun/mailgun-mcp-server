@@ -1,6 +1,7 @@
 import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { MailgunApiError } from "../api.js";
+import type { MailgunConfig } from "../config.js";
 import { type ToolClassification, toolConfig } from "../tags.js";
 import {
   collectEmailPreviewQa,
@@ -59,7 +60,11 @@ function buildErrorResponse(
 
 export const TOOL_NAME = "get_email_preview_qa";
 
-export function register(server: McpServer, classification: ToolClassification): RegisteredTool {
+export function register(
+  server: McpServer,
+  config: MailgunConfig,
+  classification: ToolClassification,
+): RegisteredTool {
   return server.registerTool(
     TOOL_NAME,
     {
@@ -93,7 +98,7 @@ export function register(server: McpServer, classification: ToolClassification):
       try {
         const output = await runGetEmailPreviewQa(
           { testId, timeoutSeconds: params.timeout_seconds },
-          createDefaultDeps(),
+          createDefaultDeps(config),
         );
         return {
           content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],

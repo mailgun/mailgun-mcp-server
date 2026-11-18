@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { performance } from "node:perf_hooks";
 import { MailgunApiError, makeMailgunRequest } from "../../src/api.js";
+import type { MailgunConfig } from "../../src/config.js";
 import { WorkflowDeadlineError } from "../../src/custom-tools/email-preview-qa.js";
 import {
   createDefaultDeps,
@@ -14,6 +15,7 @@ vi.mock("../../src/api.js", async (importOriginal) => ({
 }));
 
 const request = vi.mocked(makeMailgunRequest);
+const CONFIG: MailgunConfig = { apiKey: "key-test", hostname: "api.mailgun.net" };
 let clock = 0;
 
 beforeEach(() => {
@@ -28,25 +30,26 @@ afterEach(() => {
 });
 
 function lastTimeoutMs(): number | undefined {
-  return request.mock.calls.at(-1)?.[4];
+  return request.mock.calls.at(-1)?.[5];
 }
 
 describe("createDefaultDeps", () => {
   test("uses the per-request timeout while the handler deadline is far away", async () => {
-    const deps = createDefaultDeps();
+    const deps = createDefaultDeps(CONFIG);
     await deps.request("GET", "/v2/preview/tests/t");
     expect(lastTimeoutMs()).toBe(PER_REQUEST_TIMEOUT_MS);
+    expect(request.mock.calls.at(-1)?.[0]).toBe(CONFIG);
   });
 
   test("clamps a late request to the time left before the handler deadline", async () => {
-    const deps = createDefaultDeps();
+    const deps = createDefaultDeps(CONFIG);
     clock = HANDLER_DEADLINE_MS - 4_000;
     await deps.request("GET", "/v2/preview/tests/t");
     expect(lastTimeoutMs()).toBe(4_000);
   });
 
   test("refuses to start a request once the handler deadline has passed", async () => {
-    const deps = createDefaultDeps();
+    const deps = createDefaultDeps(CONFIG);
     clock = HANDLER_DEADLINE_MS;
     await expect(deps.request("GET", "/v2/preview/tests/t")).rejects.toBeInstanceOf(
       WorkflowDeadlineError,
@@ -55,7 +58,7 @@ describe("createDefaultDeps", () => {
   });
 
   test("reports an abort at the handler deadline as a deadline error", async () => {
-    const deps = createDefaultDeps();
+    const deps = createDefaultDeps(CONFIG);
     clock = HANDLER_DEADLINE_MS - 1_000;
     request.mockImplementation(async () => {
       clock = HANDLER_DEADLINE_MS;
@@ -67,7 +70,7 @@ describe("createDefaultDeps", () => {
   });
 
   test("passes other failures through unchanged", async () => {
-    const deps = createDefaultDeps();
+    const deps = createDefaultDeps(CONFIG);
     const failure = new MailgunApiError("boom", 500);
     request.mockRejectedValue(failure);
     await expect(deps.request("GET", "/v2/preview/tests/t")).rejects.toBe(failure);

@@ -1,6 +1,7 @@
 import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { makeMailgunRequest, MailgunApiError } from "../api.js";
+import type { MailgunConfig } from "../config.js";
 import { type ToolClassification, toolConfig } from "../tags.js";
 
 // --- Types ---
@@ -169,30 +170,36 @@ function buildErrorResponse(
 
 export const TOOL_NAME = "get_metrics_summary";
 
-export function register(server: McpServer, classification: ToolClassification): RegisteredTool {
+const inputSchema = {
+  domain: z.string().describe("Sending domain to retrieve metrics for."),
+  start: z
+    .string()
+    .optional()
+    .describe("Start of time window in ISO 8601 format (e.g. '2026-04-27T00:00:00Z')."),
+  end: z.string().optional().describe("End of time window in ISO 8601 format."),
+  duration: z
+    .string()
+    .optional()
+    .describe(
+      "Duration shorthand as alternative to start/end (e.g. '24h', '7d'). Defaults to '24h'.",
+    ),
+  timezone: z
+    .string()
+    .optional()
+    .describe("Timezone for the window (e.g. 'UTC', 'America/New_York'). Defaults to UTC."),
+};
+
+export function register(
+  server: McpServer,
+  config: MailgunConfig,
+  classification: ToolClassification,
+): RegisteredTool {
   return server.registerTool(
     TOOL_NAME,
     {
       description:
         "Retrieve a structured summary of key sending metrics (counts and computed rates) for a domain and time window. Returns raw counts, decimal rates, and data-gap reporting. Use as a data primitive for delivery-health questions.",
-      inputSchema: {
-        domain: z.string().describe("Sending domain to retrieve metrics for."),
-        start: z
-          .string()
-          .optional()
-          .describe("Start of time window in ISO 8601 format (e.g. '2026-04-27T00:00:00Z')."),
-        end: z.string().optional().describe("End of time window in ISO 8601 format."),
-        duration: z
-          .string()
-          .optional()
-          .describe(
-            "Duration shorthand as alternative to start/end (e.g. '24h', '7d'). Defaults to '24h'.",
-          ),
-        timezone: z
-          .string()
-          .optional()
-          .describe("Timezone for the window (e.g. 'UTC', 'America/New_York'). Defaults to UTC."),
-      },
+      inputSchema,
       ...toolConfig(classification),
     },
     async (params) => {
@@ -235,6 +242,7 @@ export function register(server: McpServer, classification: ToolClassification):
         );
 
         const result = (await makeMailgunRequest(
+          config,
           "POST",
           "/v1/analytics/metrics",
           body,
