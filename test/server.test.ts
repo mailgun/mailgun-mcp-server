@@ -144,7 +144,9 @@ describe("dynamic mode", () => {
     const { tools } = await client.listTools();
     const enable = tools.find((tool) => tool.name === "mailgun_enable_toolset")!;
     expect(enable.description).toContain("- send.lists: Mailing lists and list members");
-    expect(enable.description).toContain("- inspect: Email preview test results");
+    expect(enable.description).toContain(
+      "- inspect: Email preview QA: run and resume tests, client renders, check results",
+    );
   });
 });
 
@@ -308,11 +310,11 @@ describe("mailgun_call_tool", () => {
 
 describe("static modes", () => {
   test.each<[string, ActiveTags, number]>([
-    ["all", "all", 73],
+    ["all", "all", 83],
     ["send", new Set(["send"]), 70],
     ["core", new Set(["core"]), 15],
     ["send.templates", new Set(["send.templates"]), 8],
-    ["validate,inspect", new Set(["validate", "inspect"]), 2],
+    ["validate,inspect", new Set(["validate", "inspect"]), 12],
   ])("--tags %s registers %i tools and no meta-tools", async (_label, activeTags, count) => {
     await connect(activeTags);
     const { tools } = await client.listTools();

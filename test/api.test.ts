@@ -1,33 +1,9 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import type { RequestOptions } from "node:https";
-import { afterEach, describe, expect, test, vi } from "vitest";
 import { MailgunApiError, makeMailgunRequest } from "../src/api.js";
 import type { MailgunConfig } from "../src/config.js";
 import { USER_AGENT } from "../src/version.js";
-
-class FakeClientRequest extends EventEmitter {
-  write(): void {}
-  end(): void {}
-}
-
-const hoisted = vi.hoisted(() => ({
-  lastOptions: null as RequestOptions | null,
-}));
-
-vi.mock("node:https", () => ({
-  default: {
-    request: (options: RequestOptions, cb: (res: EventEmitter) => void) => {
-      hoisted.lastOptions = options;
-      const req = new FakeClientRequest();
-      const res = new EventEmitter() as EventEmitter & { statusCode: number };
-      res.statusCode = 200;
-      cb(res);
-      res.emit("data", Buffer.from(JSON.stringify({ ok: true })));
-      res.emit("end");
-      return req;
-    },
-  },
-}));
 
 describe("MailgunApiError", () => {
   test("carries statusCode and apiMessage", () => {
@@ -46,25 +22,117 @@ describe("MailgunApiError", () => {
   });
 });
 
-describe("makeMailgunRequest", () => {
-  const usConfig: MailgunConfig = { apiKey: "key-us", hostname: "api.mailgun.net" };
-  const euConfig: MailgunConfig = { apiKey: "key-eu", hostname: "api.eu.mailgun.net" };
+// Fake request lifecycle; destroy(err) surfaces through the Node error event.
+class FakeClientRequest extends EventEmitter {
+  destroyed = false;
+  write(): void {}
+  end(): void {}
+  destroy(error?: Error): void {
+    this.destroyed = true;
+    if (error) this.emit("error", error);
+  }
+}
 
+const hoisted = vi.hoisted(() => ({
+  pending: null as { req: FakeClientRequest; cb: (res: EventEmitter) => void } | null,
+  lastOptions: null as RequestOptions | null,
+}));
+
+vi.mock("node:https", () => ({
+  default: {
+    request: (options: RequestOptions, cb: (res: EventEmitter) => void) => {
+      hoisted.lastOptions = options;
+      const req = new FakeClientRequest();
+      hoisted.pending = { req, cb };
+      return req;
+    },
+  },
+}));
+
+function respond(statusCode: number, body: unknown): void {
+  const res = new EventEmitter() as EventEmitter & { statusCode: number };
+  res.statusCode = statusCode;
+  hoisted.pending!.cb(res);
+  res.emit("data", Buffer.from(JSON.stringify(body)));
+  res.emit("end");
+}
+
+const usConfig: MailgunConfig = { apiKey: "key-us", hostname: "api.mailgun.net" };
+const euConfig: MailgunConfig = { apiKey: "key-eu", hostname: "api.eu.mailgun.net" };
+
+describe("makeMailgunRequest per-request timeout", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    hoisted.pending = null;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  test("aborts absolutely when the response never completes", async () => {
+    // Attach the catch synchronously so the later rejection is always handled.
+    const settled = makeMailgunRequest(
+      usConfig,
+      "GET",
+      "/v2/preview/tests/x",
+      null,
+      "application/json",
+      30_000,
+    ).catch((error: unknown) => error);
+    // Deadline is absolute: it fires even though the connection is "active".
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await settled).toMatchObject({
+      name: "MailgunApiError",
+      statusCode: 0,
+      message: /timed out after 30000ms/,
+    });
+    expect(hoisted.pending?.req.destroyed).toBe(true);
+  });
+
+  test("a completed response clears the timer and resolves (no late abort)", async () => {
+    const promise = makeMailgunRequest(
+      usConfig,
+      "GET",
+      "/v2/preview/tests/x",
+      null,
+      "application/json",
+      30_000,
+    );
+    respond(200, { id: "preview_test_001" });
+    await expect(promise).resolves.toEqual({ id: "preview_test_001" });
+    // Advancing past the old deadline must not destroy the settled request.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(hoisted.pending?.req.destroyed).toBe(false);
+  });
+
+  test("compatibility: an omitted timeout arms no timer and still resolves", async () => {
+    const promise = makeMailgunRequest(usConfig, "GET", "/v2/preview/tests/x");
+    respond(200, { ok: true });
+    await expect(promise).resolves.toEqual({ ok: true });
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(hoisted.pending?.req.destroyed).toBe(false);
+  });
+});
+
+describe("makeMailgunRequest", () => {
   afterEach(() => {
     hoisted.lastOptions = null;
   });
 
   test("sends the Mailgun MCP user agent on every request", async () => {
-    await expect(makeMailgunRequest(usConfig, "GET", "/v3/domains")).resolves.toEqual({
-      ok: true,
-    });
+    const promise = makeMailgunRequest(usConfig, "GET", "/v3/domains");
+    respond(200, { ok: true });
+    await expect(promise).resolves.toEqual({ ok: true });
     expect(hoisted.lastOptions?.headers?.["User-Agent"]).toBe(USER_AGENT);
   });
 
   test.each([usConfig, euConfig])(
     "calls the host with the key of the config it's given ($hostname)",
     async (config) => {
-      await makeMailgunRequest(config, "GET", "/v3/domains");
+      const promise = makeMailgunRequest(config, "GET", "/v3/domains");
+      respond(200, { ok: true });
+      await promise;
       const basic = Buffer.from(`api:${config.apiKey}`).toString("base64");
       expect(hoisted.lastOptions?.hostname).toBe(config.hostname);
       expect(hoisted.lastOptions?.headers?.["Authorization"]).toBe(`Basic ${basic}`);

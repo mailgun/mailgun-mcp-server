@@ -21,7 +21,7 @@ export const TOOLSETS = {
   "send.templates": "Templates and template versions",
   validate: "Email address validation",
   optimize: "Inbox placement test results",
-  inspect: "Email preview test results",
+  inspect: "Email preview QA: run and resume tests, client renders, check results",
 } as const;
 
 export type ToolsetId = keyof typeof TOOLSETS;

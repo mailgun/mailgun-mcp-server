@@ -23,9 +23,10 @@ This document summarizes the Mailgun MCP Server security model for users and mar
 
 - The server does not intentionally log API keys.
 - API responses may contain email-related account data depending on invoked tools; run the server in trusted environments.
+- The Email Preview (Inspect) detail and client-result tools can return large payloads that include rendered HTML snippets and other potentially sensitive email content. Be mindful of what is surfaced to the model.
 
 ## Operational recommendations
 
 - Use separate API keys for development and production.
 - Rotate keys periodically and immediately after suspected exposure.
-- Review tool-call confirmations in MCP clients before approving write operations.
+- Review tool-call confirmations in MCP clients before approving write operations. Note that `run_email_preview_qa` is a mutating, quota-consuming action: it creates a remote Mailgun preview test (it does not send email).

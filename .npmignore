@@ -19,3 +19,6 @@ eslint.config.js
 # Misc
 .DS_Store
 .env
+
+# NOTE: skills/ intentionally ships in the tarball (Agent Skill:
+# mailgun-inspect-preflight). test/package-contents.test.ts guards this.
