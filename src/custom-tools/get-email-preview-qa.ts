@@ -17,7 +17,7 @@ import {
   timeoutSecondsSchema,
 } from "./email-preview-qa-runtime.js";
 
-// Resume lacks create-time provenance, so an absent check reports unavailable with a hedged gap.
+// Read-only resume; check lifecycle comes from the status snapshot, so it matches the create call.
 
 export interface GetEmailPreviewQaParams {
   testId: string;
@@ -39,7 +39,6 @@ export async function runGetEmailPreviewQa(
   deps: PollDeps,
 ): Promise<EmailPreviewQaOutput> {
   const timeoutMs = resolveTimeoutSeconds(params.timeoutSeconds) * 1000;
-  // No requestedChecks: the resume path cannot recover the create-time selection.
   try {
     return await collectEmailPreviewQa({ testId: params.testId, timeoutMs }, deps);
   } catch (error) {

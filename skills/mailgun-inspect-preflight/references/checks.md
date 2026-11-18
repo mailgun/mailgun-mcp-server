@@ -17,11 +17,12 @@ Call a detail tool only under the evidence rules in `SKILL.md`, and only with th
 
 Each check reports a `status`:
 
-- `not_requested`: the check was not selected at create time. Report it as not requested, never as passing.
+- `not_requested`: accessibility or code analysis was not selected at create time. Report it as not requested, never as passing.
+- `not_run`: Inspect has no link or image validation result because the check was either not selected, or selected but the HTML had no links or images to check. Inspect does not record which, so `run_email_preview_qa` and `get_email_preview_qa` report the same state. If the check was requested, say the HTML appears to have no links or images and ask the user to confirm; never report it as passing.
 - `processing`: the check job or its detail result is still settling (upstream status `Processing`, or no status snapshot was read before the deadline). Resuming with the same `test_id` may complete it.
 - `complete`: the detail result was retrieved with a completed status and its counts are trustworthy.
 - `job_failed`: the upstream check job failed (`Failed`/`Error` status, or errors at create time). There are no counts to trust. A `check_job_failed` entry appears in `data_gaps`.
-- `unavailable`: the check was requested but Inspect did not run it, exposed no result reference, returned an unrecognized status, or its detail endpoint was unavailable. A matching entry appears in `data_gaps`. On a resume, a check that was never requested can also surface here, because Inspect omits unrequested checks and the resume has no record of the original selection.
+- `unavailable`: the check ran but exposed no result reference, returned an unrecognized status, or its detail endpoint was unavailable. A matching entry appears in `data_gaps`.
 
 Counts for any state other than `complete` are zero-filled placeholders, not findings. Never present them as "0 issues found".
 
@@ -57,8 +58,7 @@ Every `data_gaps` entry has a `code`, `message`, and `impact`. Report gaps in th
 | `render_clients_unavailable`      | No client rendering state yet                    | Read-only resume later                     |
 | `render_incomplete`               | Some client renders still processing             | Read-only resume collects the rest         |
 | `requested_client_missing`        | A requested client appeared in no render state   | Report; may be unsupported or initializing |
-| `check_not_run`                   | Inspect skipped link/image validation (nothing to check) | Confirm the HTML has no links/images; not a pass |
-| `check_reference_missing`         | A requested check exposed no result reference    | Detail results unretrievable for this test |
+| `check_reference_missing`         | A check ran but exposed no result reference      | Detail results unretrievable for this test |
 | `check_job_failed`                | The upstream check job failed                    | No findings exist; never report "0 issues" |
 | `check_status_unrecognized`       | A detail result had an unknown or missing status | Results not counted; report the gap        |
 | `result_endpoint_unavailable`     | A check's detail endpoint was unavailable        | Detail results not counted; report the gap |

@@ -5,6 +5,7 @@ import {
   RunEmailPreviewQaError,
   MAX_HTML_BYTES,
 } from "../../src/custom-tools/run-email-preview-qa.js";
+import { runGetEmailPreviewQa } from "../../src/custom-tools/get-email-preview-qa.js";
 import { buildPreviewCreateRequest } from "../../src/custom-tools/email-preview-qa.js";
 import { MailgunApiError } from "../../src/api.js";
 import type { PollDeps } from "../../src/custom-tools/email-preview-qa.js";
@@ -361,13 +362,36 @@ describe("runCreateAndPoll", () => {
     const output = await runCreateAndPoll(validateRunInput(baseInput), deps);
 
     expect(output.timed_out).toBe(false);
-    expect(output.checks.link_validation.status).toBe("unavailable");
+    expect(output.checks.link_validation.status).toBe("not_run");
     expect(output.checks.image_validation.status).toBe("complete");
-    expect(output.data_gaps).toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: "check_not_run" })]),
-    );
     expect(gets.filter((g) => g === STATUS_PATH)).toHaveLength(1);
     expect(posts).toHaveLength(1);
+  });
+
+  test("create and resume report the same checks and gaps for the same test", async () => {
+    // A link-only test: upstream omits the three unrequested checks from every status read.
+    const renderLinkOnly = {
+      ...RENDER_COMPLETE,
+      content_checking: { link_validation: RENDER_COMPLETE.content_checking.link_validation },
+    };
+    const created = await runCreateAndPoll(
+      validateRunInput({ ...baseInput, contentChecks: ["link_validation"] }),
+      fakeDeps({ createResponse: CREATE_ALL_CHECKS, status: renderLinkOnly }).deps,
+    );
+    const resumed = await runGetEmailPreviewQa(
+      { testId: "preview_test_001" },
+      fakeDeps({ status: renderLinkOnly }).deps,
+    );
+
+    expect(resumed.checks).toEqual(created.checks);
+    expect(resumed.data_gaps).toEqual(created.data_gaps);
+    expect(created.checks).toMatchObject({
+      link_validation: { status: "complete" },
+      image_validation: { status: "not_run" },
+      accessibility: { status: "not_requested" },
+      code_analysis: { status: "not_requested" },
+    });
+    expect(created.data_gaps).toEqual([]);
   });
 
   test("an explicit empty content_checks selection terminates after one status read", async () => {
@@ -386,8 +410,13 @@ describe("runCreateAndPoll", () => {
       validateRunInput({ ...baseInput, contentChecks: [] }),
       deps,
     );
-    // No checks requested -> all not_requested -> terminal immediately, no result fetches.
-    expect(output.checks.link_validation.status).toBe("not_requested");
+    // Omitted checks are terminal immediately, with no result fetches.
+    expect(output.checks).toMatchObject({
+      link_validation: { status: "not_run" },
+      image_validation: { status: "not_run" },
+      accessibility: { status: "not_requested" },
+      code_analysis: { status: "not_requested" },
+    });
     expect(gets.filter((g) => g === STATUS_PATH)).toHaveLength(1);
     expect(gets.some((g) => g.startsWith("/v1/inspect/"))).toBe(false);
     expect(posts).toHaveLength(1);

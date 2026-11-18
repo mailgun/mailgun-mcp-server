@@ -1,9 +1,12 @@
+import { asArray, asRecord, nonEmptyString, stringArray } from "../value-utils.js";
+
 // --- Vocabulary ---
 
 export type RenderStatus = "complete" | "processing" | "partial" | "unknown";
 
 export type CheckLifecycle =
   | "not_requested"
+  | "not_run"
   | "processing"
   | "complete"
   | "job_failed"
@@ -92,30 +95,7 @@ export interface EmailPreviewQaOutput {
 
 const PRODUCT = "Inspect";
 
-// --- Value helpers ---
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
-function stringArray(value: unknown): string[] {
-  return asArray(value).filter((v): v is string => typeof v === "string");
-}
-
-function str(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-// Normalize lifecycle status only for comparison, never for display.
-function statusToken(value: unknown): string {
-  return typeof value === "string" ? value.trim().toLowerCase() : "";
-}
+// --- Counting helpers ---
 
 // Preserve upstream severity spelling and casing; bucket blank values as "unknown".
 function severityBucket(value: unknown): string {
@@ -154,12 +134,10 @@ function normalizeRenderState(render: unknown): RenderState {
 // --- Check references ---
 
 interface CheckReference {
-  // False when unrequested; null when a resume finds the check absent and cannot tell why.
+  // False when unrequested; null when an omitted check may have been skipped for having nothing to check.
   requested: boolean | null;
   // False until a status snapshot has been read; nothing is known about the check before then.
   observed: boolean;
-  // Exposed separates a present-but-empty node from one the snapshot omitted.
-  exposed: boolean;
   hasErrors: boolean;
   resultId: string | null;
 }
@@ -171,50 +149,36 @@ function unobservedCheckReferences(
   const result = {} as Record<CheckName, CheckReference>;
   for (const name of CHECK_NAMES) {
     const requested = requestedChecks ? requestedChecks.has(name) : null;
-    result[name] = { requested, observed: false, exposed: false, hasErrors: false, resultId: null };
+    result[name] = { requested, observed: false, hasErrors: false, resultId: null };
   }
   return result;
 }
 
-// Upstream writes references once and never updates them, so an absent check is terminal; null means unrequested.
-function extractCheckResultIds(
-  render: unknown,
-  requestedChecks?: ReadonlySet<CheckName>,
-): Record<CheckName, CheckReference> {
+// Inspect skips link/image validation when the HTML has none; a failing accessibility or code-analysis run fails the create.
+const SKIPPABLE_CHECKS: ReadonlySet<CheckName> = new Set(["link_validation", "image_validation"]);
+
+// Upstream writes references once at create and omits unrequested or skipped checks. Classifying an
+// omitted check from the snapshot alone keeps create and resume output identical for the same test.
+function extractCheckResultIds(render: unknown): Record<CheckName, CheckReference> {
   const cc = asRecord(asRecord(render).content_checking);
   const result = {} as Record<CheckName, CheckReference>;
   for (const name of CHECK_NAMES) {
     const raw = cc[name];
-    if (raw === null) {
+    if (raw === undefined || raw === null) {
       result[name] = {
-        requested: false,
+        requested: SKIPPABLE_CHECKS.has(name) ? null : false,
         observed: true,
-        exposed: false,
-        hasErrors: false,
-        resultId: null,
-      };
-      continue;
-    }
-    if (raw === undefined) {
-      const requested = requestedChecks ? requestedChecks.has(name) : null;
-      result[name] = {
-        requested,
-        observed: true,
-        exposed: false,
         hasErrors: false,
         resultId: null,
       };
       continue;
     }
     const node = asRecord(raw);
-    const hasErrors = asArray(node.errors).length > 0;
-    const items = asRecord(node.items);
     result[name] = {
       requested: true,
       observed: true,
-      exposed: true,
-      hasErrors,
-      resultId: str(items.id),
+      hasErrors: asArray(node.errors).length > 0,
+      resultId: nonEmptyString(asRecord(node.items).id),
     };
   }
   return result;
@@ -238,12 +202,13 @@ type DetailStatus = "complete" | "processing" | "failed" | "unknown";
 
 // Raw meta.status from a detail payload, for gap messages; null when missing or blank.
 function rawDetailStatus(payload: unknown): string | null {
-  return str(asRecord(asRecord(payload).meta).status);
+  return nonEmptyString(asRecord(asRecord(payload).meta).status);
 }
 
 // Inspect v1 statuses: Processing, Completed/Complete, Failed, Error; anything else (or missing) is unknown.
 function detailStatus(payload: unknown): DetailStatus {
-  const raw = statusToken(rawDetailStatus(payload));
+  // Normalized only for comparison, never for display.
+  const raw = (rawDetailStatus(payload) ?? "").trim().toLowerCase();
   if (raw.startsWith("process")) return "processing";
   if (raw.startsWith("complet")) return "complete";
   if (raw.startsWith("fail") || raw.startsWith("error")) return "failed";
@@ -253,7 +218,7 @@ function detailStatus(payload: unknown): DetailStatus {
 // Check completion depends on its job and detail endpoint, not client rendering.
 function isCheckTerminal(ref: CheckReference, fetch: CheckFetch): boolean {
   if (!ref.observed) return false;
-  if (ref.requested === false) return true;
+  if (ref.requested !== true) return true;
   if (ref.hasErrors) return true;
   // Absent or empty references never gain an id on a later read.
   if (ref.resultId === null) return true;
@@ -266,6 +231,7 @@ function isCheckTerminal(ref: CheckReference, fetch: CheckFetch): boolean {
 function normalizeCheckLifecycle(ref: CheckReference, fetch: CheckFetch): CheckLifecycle {
   if (!ref.observed) return ref.requested === false ? "not_requested" : "processing";
   if (ref.requested === false) return "not_requested";
+  if (ref.requested === null) return "not_run";
   if (ref.hasErrors) return "job_failed";
   if (ref.resultId === null) return "unavailable";
   if (fetch.status === "not_found") return "unavailable";
@@ -390,7 +356,7 @@ function countCodeAnalysisIssues(payload: unknown): CodeAnalysisCounts {
   let instances = 0;
   for (const feature of features) {
     const record = asRecord(feature);
-    const slug = str(record.slug) ?? str(record.name) ?? "unknown";
+    const slug = nonEmptyString(record.slug) ?? nonEmptyString(record.name) ?? "unknown";
     const instanceCount = asArray(record.instances).length;
     increment(by_feature, slug, instanceCount);
     instances += instanceCount;
@@ -505,7 +471,7 @@ const CHECK_ADAPTERS: { [K in CheckName]: CheckAdapter<K> } = {
 export function normalizeWarnings(create: unknown): PreviewWarning[] {
   return asArray(asRecord(create).warnings).map((w) => {
     const record = asRecord(w);
-    return { name: str(record.name), message: str(record.message) };
+    return { name: nonEmptyString(record.name), message: nonEmptyString(record.message) };
   });
 }
 
@@ -535,7 +501,7 @@ export function buildPreviewCreateRequest(input: PreviewCreateInput): Record<str
 }
 
 export function extractCreatedTestId(created: unknown): string | null {
-  return str(asRecord(created).id);
+  return nonEmptyString(asRecord(created).id);
 }
 
 // --- Output builder ---
@@ -599,24 +565,11 @@ function normalizeStructuredCheck<K extends CheckName>(
 // Why a requested check has no trustworthy result; the code tells the reader what to do next.
 function unavailableGap(name: CheckName, ref: CheckReference, fetch: CheckFetch): DataGap {
   if (ref.resultId === null) {
-    const skippable = name === "link_validation" || name === "image_validation";
-    if (!ref.exposed && ref.requested === true && skippable) {
-      const subject = name === "link_validation" ? "links" : "images";
-      return {
-        code: "check_not_run",
-        product: PRODUCT,
-        message: `Inspect did not run ${name} for this test, which happens when the HTML contains no ${subject} to check.`,
-        impact: `There are no ${name} findings; confirm the HTML really has no ${subject} before treating this as a pass.`,
-      };
-    }
     return {
       code: "check_reference_missing",
       product: PRODUCT,
       message: `The ${name} check did not expose a result reference.`,
-      impact:
-        ref.requested === null
-          ? `Detailed ${name} results cannot be retrieved for this test; the check may not have been requested at create time, or Inspect may have had nothing to check.`
-          : `Detailed ${name} results cannot be retrieved for this test.`,
+      impact: `Detailed ${name} results cannot be retrieved for this test.`,
     };
   }
   if (fetch.status === "ok") {
@@ -771,7 +724,7 @@ export interface PollDeps {
 interface PollParams {
   testId: string;
   timeoutMs: number;
-  // Create-time selection distinguishes an absent requested check from an unrequested one.
+  // Create-time selection labels checks only until the first snapshot; the snapshot decides after that.
   requestedChecks?: ReadonlySet<CheckName>;
 }
 
@@ -848,7 +801,7 @@ async function pollEmailPreviewQa(params: PollParams, deps: PollDeps): Promise<P
     try {
       // Commit only complete snapshots so a deadline abort keeps the previous one.
       const nextRender = await deps.request("GET", statusPath);
-      const nextRefs = extractCheckResultIds(nextRender, params.requestedChecks);
+      const nextRefs = extractCheckResultIds(nextRender);
       fetches = await fetchCheckResults(nextRefs, deps);
       render = nextRender;
       refs = nextRefs;

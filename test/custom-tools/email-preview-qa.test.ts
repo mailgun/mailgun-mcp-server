@@ -51,14 +51,13 @@ const RESULT_ROUTES: Record<string, unknown> = {
   "/v1/inspect/analyze/code_001": CODE_ANALYSIS_RESULT,
 };
 
+// Upstream omits unrequested checks rather than sending null.
 function renderFor(name: CheckName, id: string): Record<string, unknown> {
-  const contentChecking = Object.fromEntries(CHECK_NAMES.map((check) => [check, null]));
-  contentChecking[name] = { items: { id } };
   return {
     completed: ["gmail_chrome"],
     processing: [],
     bounced: [],
-    content_checking: contentChecking,
+    content_checking: { [name]: { items: { id } } },
   };
 }
 
@@ -200,10 +199,14 @@ describe("collectEmailPreviewQa", () => {
     );
   });
 
-  test("a resume cannot tell an omitted check from an unrequested one and says so", async () => {
-    // No requestedChecks: accessibility is omitted rather than null.
+  test.each([
+    ["link_validation", "not_run"],
+    ["image_validation", "not_run"],
+    ["accessibility", "not_requested"],
+    ["code_analysis", "not_requested"],
+  ] as const)("an omitted %s is terminal as %s without a data gap", async (name, status) => {
     const contentChecking: Record<string, unknown> = { ...RENDER_COMPLETE.content_checking };
-    delete contentChecking.accessibility;
+    delete contentChecking[name];
     const { deps, requests } = fakeDeps({
       [STATUS_PATH]: { ...RENDER_COMPLETE, content_checking: contentChecking },
       ...RESULT_ROUTES,
@@ -214,15 +217,9 @@ describe("collectEmailPreviewQa", () => {
     );
 
     expect(output.timed_out).toBe(false);
-    expect(output.checks.accessibility.status).toBe("unavailable");
-    expect(output.data_gaps).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "check_reference_missing",
-          impact: expect.stringContaining("may not have been requested"),
-        }),
-      ]),
-    );
+    expect(output.checks[name]).toMatchObject({ status, result_id: null });
+    expect(output.issue_counts.by_check[name]).toBeUndefined();
+    expect(output.data_gaps).toEqual([]);
     expect(requests.filter((request) => request === `GET ${STATUS_PATH}`)).toHaveLength(1);
   });
 
