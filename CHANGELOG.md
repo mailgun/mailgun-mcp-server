@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.4.0
+
+### Changed
+
+- `send.message_tags` now uses the current Tags API: `POST /v1/analytics/tags` (list or
+  search tags) and `GET /v1/analytics/tags/limits` (tag limit and usage).
+
+### Removed
+
+- Removed the endpoints Mailgun marks as deprecated in its OpenAPI spec, 15 tools in all:
+  the Stats API reads (`GET /v3/stats/total`, `GET /v3/{domain}/stats/total`,
+  `GET /v3/stats/total/domains`, `GET /v3/stats/filter`, and the `aggregates/providers`,
+  `aggregates/devices` and `aggregates/countries` reads) and the legacy tag reads
+  (`GET /v3/{domain}/tags`, `/tag`, `/tag/stats`, `/tag/stats/aggregates`,
+  `/v3/domains/{domain}/tag/devices`, `/tag/providers`, `/tag/countries` and
+  `/limits/tag`). Use `POST /v1/analytics/metrics` in place of the Stats API reads.
+- A test now fails if any exposed endpoint is marked `deprecated: true` in the spec.
+
 ## 2.3.1
 ### Dependencies
 - **Address vulenrabilities in dependencies.** Ran `npm audit fix --force`

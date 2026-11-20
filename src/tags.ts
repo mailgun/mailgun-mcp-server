@@ -11,10 +11,8 @@ export const TOOLSETS = {
   "send.domains": "Domains: details, DNS verification, sending queues, tracking settings",
   "send.webhooks": "Domain webhooks: list, view, create, update",
   "send.account": "Account IPs, dedicated IP pools, and custom sending limits",
-  "send.message_tags":
-    "Message tags: list tags, stats by tag, tag limits, devices/providers/countries",
-  "send.analytics":
-    "Sending stats and aggregates, analytics metrics and logs, bounce classification, metrics summary",
+  "send.message_tags": "Message tags: list and search account tags, tag limits",
+  "send.analytics": "Analytics metrics and logs, bounce classification, metrics summary",
   "send.suppressions": "Suppression lists: bounces, unsubscribes, complaints, allowlist",
   "send.routes": "Inbound routes: list, view, update",
   "send.lists": "Mailing lists and list members",

@@ -20,6 +20,18 @@ describe("endpoint validation against OpenAPI spec", () => {
     expect(missing).toEqual([]);
   });
 
+  test("no endpoint uses an operation the OpenAPI spec marks as deprecated", () => {
+    const deprecated: string[] = [];
+    for (const entry of endpoints) {
+      const { method, path } = parseEndpointEntry(entry);
+      const result = getOperationDetails(openApiSpec, method, path);
+      if (result && (result.operation as { deprecated?: boolean }).deprecated === true) {
+        deprecated.push(endpointLabel(entry));
+      }
+    }
+    expect(deprecated).toEqual([]);
+  });
+
   test("every endpoint produces a tool ID within the 53 character limit (no truncation)", () => {
     const truncated: { endpoint: string; toolId: string; length: number }[] = [];
     for (const entry of endpoints) {
@@ -127,8 +139,8 @@ describe("endpoint validation against OpenAPI spec", () => {
 });
 
 describe("toolset grouping", () => {
-  test("covers all 72 endpoints", () => {
-    expect(endpoints).toHaveLength(72);
+  test("covers all 59 endpoints", () => {
+    expect(endpoints).toHaveLength(59);
   });
 
   test("every toolset has at least one endpoint", () => {
@@ -181,6 +193,7 @@ describe("readOnly classification", () => {
       .filter((e) => e.method !== "GET" && e.readOnly)
       .map(({ method, path }) => `${method} ${path}`);
     expect(readOnlyNonGets).toEqual([
+      "POST /v1/analytics/tags",
       "POST /v1/analytics/metrics",
       "POST /v1/analytics/usage/metrics",
       "POST /v1/analytics/logs",
