@@ -95,26 +95,11 @@ export const endpointGroups: Readonly<Record<ToolsetId, readonly EndpointEntry[]
   ],
 
   "send.message_tags": [
-    "GET /v3/{domain}/tags",
-    "GET /v3/{domain}/tag",
-    "GET /v3/{domain}/tag/stats/aggregates",
-    "GET /v3/{domain}/tag/stats",
-    "GET /v3/domains/{domain}/tag/devices",
-    "GET /v3/domains/{domain}/tag/providers",
-    "GET /v3/domains/{domain}/tag/countries",
-    "GET /v3/domains/{domain}/limits/tag",
+    { endpoint: "POST /v1/analytics/tags", readOnly: true },
+    "GET /v1/analytics/tags/limits",
   ],
 
   "send.analytics": [
-    // Stats & Aggregates
-    "GET /v3/stats/total",
-    "GET /v3/{domain}/stats/total",
-    "GET /v3/stats/total/domains",
-    "GET /v3/stats/filter",
-    "GET /v3/{domain}/aggregates/providers",
-    "GET /v3/{domain}/aggregates/devices",
-    "GET /v3/{domain}/aggregates/countries",
-
     // Analytics
     { endpoint: "POST /v1/analytics/metrics", core: true, readOnly: true },
     { endpoint: "POST /v1/analytics/usage/metrics", readOnly: true },
