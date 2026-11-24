@@ -6,6 +6,14 @@ import {
   TOOL_NAME as GET_METRICS_SUMMARY,
   register as registerGetMetricsSummary,
 } from "./get-metrics-summary.js";
+import {
+  TOOL_NAME as GET_EMAIL_PREVIEW_QA,
+  register as registerGetEmailPreviewQa,
+} from "./get-email-preview-qa.js";
+import {
+  TOOL_NAME as RUN_EMAIL_PREVIEW_QA,
+  register as registerRunEmailPreviewQa,
+} from "./run-email-preview-qa.js";
 
 interface CustomToolManifestEntry extends ToolClassification {
   name: string;
@@ -24,6 +32,23 @@ const customTools: readonly CustomToolManifestEntry[] = [
     core: true,
     readOnly: true,
     register: registerGetMetricsSummary,
+  },
+  {
+    name: GET_EMAIL_PREVIEW_QA,
+    tags: ["inspect"],
+    toolset: "inspect",
+    core: false,
+    readOnly: true,
+    register: registerGetEmailPreviewQa,
+  },
+  {
+    name: RUN_EMAIL_PREVIEW_QA,
+    tags: ["inspect"],
+    toolset: "inspect",
+    core: false,
+    // Creates a preview test and consumes quota.
+    readOnly: false,
+    register: registerRunEmailPreviewQa,
   },
 ];
 

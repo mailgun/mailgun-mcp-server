@@ -10,6 +10,7 @@ Connect MCP-compatible clients (Claude Desktop, Claude Code, Cursor, and others)
 - Manage routes, mailing lists, and templates.
 - Query analytics, aggregate stats, suppressions, IPs, and account limits.
 - Analyze bounce classification metrics.
+- Run Email Preview QA (Inspect): create and resume preview tests to check how HTML email renders across clients and what the link, image, accessibility, and code checks report. Creating a preview test consumes Mailgun preview quota and does not send email.
 
 ## Prerequisites
 
